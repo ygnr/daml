@@ -16,7 +16,6 @@ import com.digitalasset.ledger.backend.api.v1.LedgerBackend
 import com.digitalasset.platform.sandbox.config.SandboxConfig
 import com.digitalasset.platform.sandbox.services._
 import com.digitalasset.platform.server.services.testing.TimeServiceBackend
-import io.grpc.Server
 import io.grpc.netty.NettyServerBuilder
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.handler.ssl.SslContext
@@ -62,6 +61,8 @@ class LedgerApiServer(
     sslContext: Option[SslContext] = None)(implicit mat: ActorMaterializer)
     extends AutoCloseable {
 
+  private val logger = LoggerFactory.getLogger(this.getClass)
+
   class UnableToBind(port: Int, cause: Throwable)
       extends RuntimeException(
         s"LedgerApiServer was unable to bind to port $port. " +
@@ -83,18 +84,14 @@ class LedgerApiServer(
 
   private val apiServices = createApiServices(mat, serverEsf)
 
-  private val logger = LoggerFactory.getLogger(this.getClass)
-  @volatile
-  private var actualPort
-    : Int = -1 // we need this to remember ephemeral ports when using ResetService
-  def port: Int = if (actualPort == -1) serverPort else actualPort
+  private val (grpcServer, actualPort) = startServer()
 
-  private val grpcServer: Server = startServer()
+  def port: Int = actualPort
 
   def getServer = grpcServer
 
   private def startServer() = {
-    val builder = address.fold(NettyServerBuilder.forPort(port))(address =>
+    val builder = address.fold(NettyServerBuilder.forPort(serverPort))(address =>
       NettyServerBuilder.forAddress(new InetSocketAddress(address, port)))
 
     sslContext
@@ -114,13 +111,12 @@ class LedgerApiServer(
       .build
     try {
       grpcServer.start()
-      actualPort = grpcServer.getPort
+      logger.info(s"listening on ${address.getOrElse("localhost")}:${grpcServer.getPort}")
+      (grpcServer, grpcServer.getPort)
     } catch {
       case io: IOException if io.getCause != null && io.getCause.isInstanceOf[BindException] =>
         throw new UnableToBind(port, io.getCause)
     }
-    logger.info(s"listening on ${address.getOrElse("localhost")}:${grpcServer.getPort}")
-    grpcServer
   }
 
   private def createEventLoopGroup(threadPoolName: String): NioEventLoopGroup = {
