@@ -41,10 +41,8 @@ object LedgerApiServer {
         ApiServices.create(config, ledgerBackend, engine, timeProvider, timeServiceBackend)(
           am,
           esf),
-      config,
-      serverPort,
-      timeServiceBackend,
       resetService,
+      serverPort,
       config.address,
       config.tlsConfig.flatMap(_.server)
     )
@@ -53,10 +51,8 @@ object LedgerApiServer {
 
 class LedgerApiServer(
     createApiServices: (ActorMaterializer, ExecutionSequencerFactory) => ApiServices,
-    config: SandboxConfig,
+    resetService: Option[SandboxResetService], //TODO: can this come in above?
     serverPort: Int,
-    timeServiceBackend: Option[TimeServiceBackend],
-    resetService: Option[SandboxResetService],
     address: Option[String],
     sslContext: Option[SslContext] = None)(implicit mat: ActorMaterializer)
     extends AutoCloseable {
