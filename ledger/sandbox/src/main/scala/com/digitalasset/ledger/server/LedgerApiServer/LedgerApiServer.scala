@@ -9,13 +9,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 import akka.stream.ActorMaterializer
-import com.digitalasset.api.util.TimeProvider
-import com.digitalasset.daml.lf.engine.Engine
 import com.digitalasset.grpc.adapter.{AkkaExecutionSequencerPool, ExecutionSequencerFactory}
-import com.digitalasset.ledger.backend.api.v1.LedgerBackend
-import com.digitalasset.platform.sandbox.config.SandboxConfig
-import com.digitalasset.platform.sandbox.services._
-import com.digitalasset.platform.server.services.testing.TimeServiceBackend
 import io.grpc.netty.NettyServerBuilder
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.handler.ssl.SslContext
@@ -26,31 +20,21 @@ import scala.util.control.NoStackTrace
 
 object LedgerApiServer {
   def apply(
-      ledgerBackend: LedgerBackend,
-      timeProvider: TimeProvider,
-      engine: Engine,
-      config: SandboxConfig,
-      //even though the port is in the config as well, in case of a reset we have to keep the port to what it was originally set for the first time
-      serverPort: Int,
-      timeServiceBackend: Option[TimeServiceBackend],
-      resetService: Option[SandboxResetService])(
-      implicit mat: ActorMaterializer): LedgerApiServer = {
-
+      createApiServices: (ActorMaterializer, ExecutionSequencerFactory) => ApiServices,
+      desiredPort: Int,
+      address: Option[String],
+      sslContext: Option[SslContext] = None)(implicit mat: ActorMaterializer): LedgerApiServer =
     new LedgerApiServer(
-      (am: ActorMaterializer, esf: ExecutionSequencerFactory) =>
-        ApiServices
-          .create(config, ledgerBackend, engine, timeProvider, timeServiceBackend)(am, esf)
-          .withServices(resetService.toList),
-      serverPort,
-      config.address,
-      config.tlsConfig.flatMap(_.server)
+      createApiServices,
+      desiredPort,
+      address,
+      sslContext
     )
-  }
 }
 
 class LedgerApiServer(
     createApiServices: (ActorMaterializer, ExecutionSequencerFactory) => ApiServices,
-    serverPort: Int,
+    desiredPort: Int,
     address: Option[String],
     sslContext: Option[SslContext] = None)(implicit mat: ActorMaterializer)
     extends AutoCloseable {
@@ -85,7 +69,7 @@ class LedgerApiServer(
   def getServer = grpcServer
 
   private def startServer() = {
-    val builder = address.fold(NettyServerBuilder.forPort(serverPort))(address =>
+    val builder = address.fold(NettyServerBuilder.forPort(desiredPort))(address =>
       NettyServerBuilder.forAddress(new InetSocketAddress(address, port)))
 
     sslContext
