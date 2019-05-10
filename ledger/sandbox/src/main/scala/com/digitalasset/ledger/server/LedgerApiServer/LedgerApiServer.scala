@@ -38,10 +38,9 @@ object LedgerApiServer {
 
     new LedgerApiServer(
       (am: ActorMaterializer, esf: ExecutionSequencerFactory) =>
-        ApiServices.create(config, ledgerBackend, engine, timeProvider, timeServiceBackend)(
-          am,
-          esf),
-      resetService,
+        ApiServices
+          .create(config, ledgerBackend, engine, timeProvider, timeServiceBackend)(am, esf)
+          .withServices(resetService.toList),
       serverPort,
       config.address,
       config.tlsConfig.flatMap(_.server)
@@ -51,7 +50,6 @@ object LedgerApiServer {
 
 class LedgerApiServer(
     createApiServices: (ActorMaterializer, ExecutionSequencerFactory) => ApiServices,
-    resetService: Option[SandboxResetService], //TODO: can this come in above?
     serverPort: Int,
     address: Option[String],
     sslContext: Option[SslContext] = None)(implicit mat: ActorMaterializer)
@@ -102,9 +100,7 @@ class LedgerApiServer(
     builder.workerEventLoopGroup(serverEventLoopGroup)
     builder.permitKeepAliveTime(10, TimeUnit.SECONDS)
     builder.permitKeepAliveWithoutCalls(true)
-    val grpcServer = resetService.toList
-      .foldLeft(apiServices.services.foldLeft(builder)(_ addService _))(_ addService _)
-      .build
+    val grpcServer = apiServices.services.foldLeft(builder)(_ addService _).build
     try {
       grpcServer.start()
       logger.info(s"listening on ${address.getOrElse("localhost")}:${grpcServer.getPort}")
