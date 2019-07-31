@@ -1,8 +1,9 @@
 // Copyright (c) 2019 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Note: package name must correspond exactly to the flyway 'locations' setting, which defaults to 'db.migration'
-package db.migration
+// Note: package name must correspond exactly to one of the flyway 'locations' settings, which includes
+// 'db.migration.common' (and 'db.migration.$dbType')
+package db.migration.common
 
 import java.io.InputStream
 import java.sql.Connection
@@ -305,7 +306,7 @@ class V2_1__Rebuild_Acs extends BaseJavaMigration {
     """insert into contract_divulgences(contract_id, party, ledger_offset, transaction_id)
     |values({contract_id}, {party}, {ledger_offset}, {transaction_id})
     |on conflict on constraint contract_divulgences_idx
-    |do nothing""".stripMargin
+    |do nothing""".stripMargin // TODO(oliver)
 
   private val SQL_BATCH_INSERT_DIVULGENCES_FROM_TRANSACTION_ID =
     """insert into contract_divulgences(contract_id, party, ledger_offset, transaction_id)
@@ -313,7 +314,7 @@ class V2_1__Rebuild_Acs extends BaseJavaMigration {
       |from ledger_entries
       |where transaction_id={transaction_id}
       |on conflict on constraint contract_divulgences_idx
-      |do nothing""".stripMargin
+      |do nothing""".stripMargin // TODO(oliver)
 
   private val SQL_INSERT_CHECKPOINT =
     SQL(

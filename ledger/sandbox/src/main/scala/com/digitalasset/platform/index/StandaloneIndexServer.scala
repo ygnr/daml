@@ -140,7 +140,7 @@ class StandaloneIndexServer(
 
     val initF = for {
       cond <- readService.getLedgerInitialConditions().runWith(Sink.head)
-      indexService <- PostgresIndex(
+      indexService <- JdbcIndex(
         readService,
         domain.LedgerId(cond.ledgerId),
         participantId,
@@ -162,7 +162,7 @@ class StandaloneIndexServer(
               writeService,
               indexService,
               StandaloneIndexServer.engine,
-              TimeProvider.UTC,
+              TimeProvider.Constant(Instant.EPOCH), // XXX: DON'T MERGE THIS - TEMP FOR CANTON !!!
               timeModel,
               SandboxConfig.defaultCommandConfig,
               None)(am, esf),

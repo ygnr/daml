@@ -6,12 +6,11 @@ package com.digitalasset.platform.sandbox.stores.ledger.sql.migration
 import java.math.BigInteger
 import java.security.MessageDigest
 
+import com.digitalasset.platform.sandbox.stores.ledger.sql.dao.JdbcLedgerDao
 import com.digitalasset.platform.sandbox.stores.ledger.sql.migration.FlywayMigrations.configurationBase
 import org.flywaydb.core.internal.resource.LoadableResource
 import org.flywaydb.core.internal.scanner.Scanner
 import org.scalatest.{Matchers, WordSpec}
-
-import scala.collection.JavaConverters._
 
 // SQL MIGRATION AND THEIR DIGEST FILES SHOULD BE CREATED ONLY ONCE AND NEVER CHANGED AGAIN,
 // OTHERWISE MIGRATIONS BREAK ON EXISTING DEPLOYMENTS!
@@ -20,11 +19,14 @@ class FlywayMigrationsSpec extends WordSpec with Matchers {
 
   private val digester = MessageDigest.getInstance("SHA-256")
 
-  private val resourceScanner = new Scanner(
-    configurationBase.getLocations.toList.asJava,
-    getClass.getClassLoader,
-    configurationBase.getEncoding
-  )
+  private val resourceScanner = {
+    val postgresConfig = configurationBase(JdbcLedgerDao.Postgres)
+    new Scanner(
+      postgresConfig.getLocations.toList.asJava,
+      getClass.getClassLoader,
+      postgresConfig.getEncoding
+    )
+  }
 
   "Flyway migration files" should {
     "always have a valid SHA-256 digest file accompanied" in {

@@ -21,7 +21,7 @@ import com.digitalasset.platform.sandbox.stores.ledger.{
 
 import scala.concurrent.Future
 
-object PostgresIndex {
+object JdbcIndex {
   def apply(
       readService: ReadService,
       ledgerId: LedgerId,

@@ -86,12 +86,13 @@ object SqlLedger {
 
     val dbDispatcher = DbDispatcher(jdbcUrl, noOfShortLivedConnections, noOfStreamingConnections)
     val ledgerDao = LedgerDao.metered(
-      PostgresLedgerDao(
+      JdbcLedgerDao(
         dbDispatcher,
         ContractSerializer,
         TransactionSerializer,
         ValueSerializer,
-        KeyHasher))
+        KeyHasher,
+        jdbcUrl))
 
     val sqlLedgerFactory = SqlLedgerFactory(ledgerDao)
 

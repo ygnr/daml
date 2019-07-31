@@ -352,7 +352,7 @@ abstract class LedgerBackedIndexService(
               Checkpoint(
                 domain.LedgerOffset.Absolute(Ref.LedgerString.assertFromString(offset.toString)),
                 c.recordedAt)
-            case (offset, r: LedgerEntry.Rejection) =>
+            case (offset, r: LedgerEntry.Rejection) if applicationId.unwrap.isEmpty || r.applicationId.contains(applicationId.unwrap) =>
               CommandRejected(
                 domain.LedgerOffset.Absolute(Ref.LedgerString.assertFromString(offset.toString)),
                 r.recordTime,

@@ -60,7 +60,7 @@ class HikariJdbcConnectionProvider(
     new HikariDataSource(config)
   }
 
-  private val flyway = FlywayMigrations(shortLivedDataSource)
+  private val flyway = FlywayMigrations(shortLivedDataSource, jdbcUrl)
   flyway.migrate()
 
   override def runSQL[T](block: Connection => T): T = {
