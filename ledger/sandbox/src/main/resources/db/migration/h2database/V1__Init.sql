@@ -1,6 +1,8 @@
 -- Copyright (c) 2019 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
+-- PART 1: copied and adapted from postgres/V1__Init.sql
+
 -- Stores the history of the ledger -- mostly transactions. This table
 -- is immutable in the sense that rows can never be modified, only
 -- added.
@@ -149,3 +151,99 @@ CREATE TABLE contract_keys (
   PRIMARY KEY (package_id, name, value_hash),
   foreign key (contract_id) references contracts (id)
 );
+
+-- PART 2: copied and adapted from postgres/V2_0__Contract_divulgence.sql
+
+---------------------------------------------------------------------------------------------------
+-- V2: Contract divulgence
+--
+-- This schema version adds a table for tracking contract divulgence.
+-- This is required for making sure contracts can only be fetched by parties that see the contract.
+---------------------------------------------------------------------------------------------------
+
+
+
+CREATE TABLE contract_divulgences (
+  contract_id   varchar  not null,
+  -- The party to which the given contract was divulged
+  party         varchar  not null,
+  -- The offset at which the contract was divulged to the given party
+  ledger_offset bigint   not null,
+  -- The transaction ID at which the contract was divulged to the given party
+  transaction_id varchar not null,
+
+  foreign key (contract_id) references contracts (id),
+  foreign key (ledger_offset) references ledger_entries (ledger_offset),
+  foreign key (transaction_id) references ledger_entries (transaction_id),
+
+  CONSTRAINT contract_divulgences_idx UNIQUE(contract_id, party)
+);
+
+-- PART 3: n/a scala-migration only, not applicable to newly introduced database types
+
+-- PART 4: adopted unmodified from postgres/V4_0__Add_parties.sql
+
+---------------------------------------------------------------------------------------------------
+-- V4: List of parties
+--
+-- This schema version adds a table for tracking known parties.
+-- In the sandbox, parties are added implicitly when they are first mentioned in a transaction,
+-- or explicitly through an API call.
+---------------------------------------------------------------------------------------------------
+
+
+
+CREATE TABLE parties (
+  -- The unique identifier of the party
+  party varchar primary key not null,
+  -- A human readable name of the party, might not be unique
+  display_name varchar,
+  -- True iff the party was added explicitly through an API call
+  explicit bool not null,
+  -- For implicitly added parties: the offset of the transaction that introduced the party
+  -- For explicitly added parties: the ledger end at the time when the party was added
+  ledger_offset bigint
+);
+
+
+-- PART 5: copied and adapted from postgres/V5__Add_packages.sql
+
+---------------------------------------------------------------------------------------------------
+-- V5: List of packages
+--
+-- This schema version adds a table for tracking DAML-LF packages.
+-- Previously, packages were only stored in memory and needed to be specified through the CLI.
+---------------------------------------------------------------------------------------------------
+
+
+
+CREATE TABLE packages (
+  -- The unique identifier of the package (the hash of its content)
+  package_id         varchar primary key      not null,
+  -- Packages are uploaded as DAR files (i.e., in groups)
+  -- This field can be used to find out which packages were uploaded together
+  upload_id          varchar                  not null,
+  -- A human readable description of the package source
+  source_description varchar,
+  -- The size of the archive payload (i.e., the serialized DAML-LF package), in bytes
+  size               bigint                   not null,
+  -- The time when the package was added
+  known_since        timestamp                not null, -- with time zone
+  -- The ledger end at the time when the package was added
+  ledger_offset      bigint                   not null,
+  -- The DAML-LF archive, serialized using the protobuf message `daml_lf.Archive`.
+  --  See also `daml-lf/archive/da/daml_lf.proto`.
+  package            bytea                    not null
+);
+
+-- PART 6: adopted unmodified from postgres/V6__External_Ledger_Offset.sql
+
+---------------------------------------------------------------------------------------------------
+-- V6: External Ledger Offset
+--
+-- This schema version adds a column to the parameters table that stores the external ledger offset
+-- that corresponds to the index ledger end.
+---------------------------------------------------------------------------------------------------
+
+ALTER TABLE parameters
+ADD external_ledger_end varchar;

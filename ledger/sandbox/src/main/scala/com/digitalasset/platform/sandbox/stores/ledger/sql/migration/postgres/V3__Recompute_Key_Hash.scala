@@ -1,9 +1,9 @@
 // Copyright (c) 2019 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Note: package name must correspond exactly to one of the flyway 'locations' settings, which includes
-// 'db.migration.common' (and 'db.migration.$dbType')
-package db.migration.common
+// Note: package name must correspond exactly to the flyway 'locations' setting, which defaults to
+// 'db.migration.postgres' for postgres migrations
+package db.migration.postgres
 
 import java.sql.{Connection, ResultSet}
 

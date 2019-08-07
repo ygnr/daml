@@ -52,7 +52,8 @@ object ReadOnlySqlLedger {
       mm: MetricsManager): Future[ReadOnlyLedger] = {
     implicit val ec: ExecutionContext = DEC
 
-    val dbDispatcher = DbDispatcher(jdbcUrl, noOfShortLivedConnections, noOfStreamingConnections)
+    val dbType = JdbcLedgerDao.jdbcType(jdbcUrl)
+    val dbDispatcher = DbDispatcher(jdbcUrl, dbType, noOfShortLivedConnections, noOfStreamingConnections)
     val ledgerReadDao = LedgerDao.meteredRead(
       JdbcLedgerDao(
         dbDispatcher,
@@ -60,7 +61,7 @@ object ReadOnlySqlLedger {
         TransactionSerializer,
         ValueSerializer,
         KeyHasher,
-        jdbcUrl))
+        dbType))
 
     ReadOnlySqlLedgerFactory(ledgerReadDao).createReadOnlySqlLedger(ledgerId)
   }

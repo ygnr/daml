@@ -30,7 +30,7 @@ object JdbcIndex {
       implicit mat: Materializer,
       mm: MetricsManager): Future[IndexService with AutoCloseable] =
     Ledger
-      .postgresReadOnly(jdbcUrl, ledgerId)
+      .jdbcBackedReadOnly(jdbcUrl, ledgerId)
       .map { ledger =>
         val contractStore = new SandboxContractStore(ledger)
         new LedgerBackedIndexService(MeteredReadOnlyLedger(ledger), contractStore, participantId) {

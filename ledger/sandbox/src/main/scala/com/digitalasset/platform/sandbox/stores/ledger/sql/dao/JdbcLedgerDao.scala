@@ -51,13 +51,11 @@ private class JdbcLedgerDao(
     transactionSerializer: TransactionSerializer,
     valueSerializer: ValueSerializer,
     keyHasher: KeyHasher,
-    jdbcUrl: String)
+    dbType: JdbcLedgerDao.DbType)
     extends LedgerDao {
   import JdbcLedgerDao._
 
   private val logger = LoggerFactory.getLogger(getClass)
-
-  private val dbType = jdbcType(jdbcUrl)
 
   private val SQL_SELECT_LEDGER_ID = SQL("select ledger_id from parameters")
 
@@ -333,53 +331,61 @@ private class JdbcLedgerDao(
   // stores the offset at which the contract was first disclosed.
   // We therefore don't need to update anything if there is already some data for the given (contract, party) tuple.
   private val SQL_BATCH_INSERT_DIVULGENCES =
-    ("""insert into contract_divulgences(contract_id, party, ledger_offset, transaction_id)
-      """ concat (dbType match {
+    dbType match {
       case Postgres =>
-        """|values({contract_id}, {party}, {ledger_offset}, {transaction_id})
-           |on conflict on constraint contract_divulgences_idx
-           |do nothing"""
+        """insert into contract_divulgences(contract_id, party, ledger_offset, transaction_id)
+          |values({contract_id}, {party}, {ledger_offset}, {transaction_id})
+          |on conflict on constraint contract_divulgences_idx
+          |do nothing""".stripMargin
       case H2Database =>
         // TODO: Same version as above, but with a check that the contract exists to avoid a referential integrity violation.
         //   Check why this happens:
-        """|select {contract_id}, {party}, {ledger_offset}, {transaction_id}
-           |where not exists(select * from contract_divulgences where contract_id = {contract_id} and party = {party})
-           |and {contract_id} in (select id from contracts)"""
-    })).stripMargin
+        """insert into contract_divulgences(contract_id, party, ledger_offset, transaction_id)
+          |select {contract_id}, {party}, {ledger_offset}, {transaction_id}
+          |where not exists(select * from contract_divulgences where contract_id = {contract_id} and party = {party})
+          |and {contract_id} in (select id from contracts)""".stripMargin
+    }
 
   private val SQL_BATCH_INSERT_DIVULGENCES_FROM_TRANSACTION_ID =
-    ("""insert into contract_divulgences(contract_id, party, ledger_offset, transaction_id)
-       |select {contract_id}, {party}, ledger_offset, {transaction_id}
-       |from ledger_entries
-       |where transaction_id={transaction_id}
-    """ concat (dbType match {
+    dbType match {
       case Postgres =>
-        """|on conflict on constraint contract_divulgences_idx
-           |do nothing"""
+        """insert into contract_divulgences(contract_id, party, ledger_offset, transaction_id)
+          |select {contract_id}, {party}, ledger_offset, {transaction_id}
+          |from ledger_entries
+          |where transaction_id={transaction_id}
+          |on conflict on constraint contract_divulgences_idx
+          |do nothing""".stripMargin
       case H2Database =>
-        """|and not exists(select * from contract_divulgences where contract_id = {contract_id} and party = {party})"""
-    })).stripMargin
+        """insert into contract_divulgences(contract_id, party, ledger_offset, transaction_id)
+          |select {contract_id}, {party}, ledger_offset, {transaction_id}
+          |from ledger_entries
+          |where transaction_id={transaction_id}
+          |and not exists(select * from contract_divulgences where contract_id = {contract_id} and party = {party})
+          |""".stripMargin
+    }
 
   private val SQL_INSERT_CHECKPOINT =
     SQL(
       "insert into ledger_entries(typ, ledger_offset, recorded_at) values('checkpoint', {ledger_offset}, {recorded_at})")
 
   private val SQL_IMPLICITLY_INSERT_PARTIES =
-    ("""insert into parties(party, explicit, ledger_offset)
-        """ concat (dbType match {
+    dbType match {
       case Postgres =>
-        """|values({name}, {explicit}, {ledger_offset})
-           |on conflict (party)
-           |do nothing"""
+        """insert into parties(party, explicit, ledger_offset)
+          |values({name}, {explicit}, {ledger_offset})
+          |on conflict (party)
+          |do nothing""".stripMargin
       case H2Database =>
-        """|select {name}, {explicit}, {ledger_offset}
-           |where {name} not in (select party from parties)"""
-    })).stripMargin
+        """insert into parties(party, explicit, ledger_offset)
+          |select {name}, {explicit}, {ledger_offset}
+          |where {name} not in (select party from parties)""".stripMargin
+    }
 
-  private val DUPLICATE_KEY_ERROR = dbType match {
-    case Postgres => "duplicate key"
-    case H2Database => "Unique index or primary key violation"
-  }
+  private val DUPLICATE_KEY_ERROR =
+    dbType match {
+      case Postgres => "duplicate key"
+      case H2Database => "Unique index or primary key violation"
+    }
 
   /**
     * Updates the active contract set from the given DAML transaction.
@@ -1051,7 +1057,7 @@ private class JdbcLedgerDao(
         """insert into packages(package_id, upload_id, source_description, size, known_since, ledger_offset, package)
           |select {package_id}, {upload_id}, {source_description}, {size}, {known_since}, ledger_end, {package}
           |from parameters
-          |where (package_id) not in (select package_id from packages)
+          |where {package_id} not in (select package_id from packages)
           |""".stripMargin
     }
 
@@ -1172,14 +1178,14 @@ object JdbcLedgerDao {
       transactionSerializer: TransactionSerializer,
       valueSerializer: ValueSerializer,
       keyHasher: KeyHasher,
-      jdbcUrl: String): LedgerDao =
+      dbType: JdbcLedgerDao.DbType): LedgerDao =
     new JdbcLedgerDao(
       dbDispatcher,
       contractSerializer,
       transactionSerializer,
       valueSerializer,
       keyHasher,
-      jdbcUrl)
+      dbType)
 
   sealed trait DbType {
     def name: String
@@ -1191,7 +1197,4 @@ object JdbcLedgerDao {
     case h2 if h2.startsWith("jdbc:h2:") => H2Database
     case _ => Postgres
   }
-
-  // Database migrations based on standard SQL are shared in "common"
-  def common: String = "common"
 }

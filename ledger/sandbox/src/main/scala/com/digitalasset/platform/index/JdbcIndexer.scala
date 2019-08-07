@@ -82,7 +82,8 @@ object JdbcIndexer {
   }
 
   private def initializeDao(jdbcUrl: String, mm: MetricsManager) = {
-    val dbDispatcher = DbDispatcher(jdbcUrl, noOfShortLivedConnections, noOfStreamingConnections)
+    val dbType = JdbcLedgerDao.jdbcType(jdbcUrl)
+    val dbDispatcher = DbDispatcher(jdbcUrl, dbType, noOfShortLivedConnections, noOfStreamingConnections)
     val ledgerDao = LedgerDao.metered(
       JdbcLedgerDao(
         dbDispatcher,
@@ -90,7 +91,7 @@ object JdbcIndexer {
         TransactionSerializer,
         ValueSerializer,
         KeyHasher,
-        jdbcUrl))(mm)
+        dbType))(mm)
     ledgerDao
   }
 
@@ -124,7 +125,7 @@ object JdbcIndexer {
   * @param beginAfterExternalOffset The last offset received from the read service.
   *                                 This offset has inclusive semantics,
   */
-class JdbcIndexer private(
+class JdbcIndexer private (
     initialInternalOffset: Long,
     beginAfterExternalOffset: Option[LedgerString],
     ledgerDao: LedgerDao)(implicit mat: Materializer)

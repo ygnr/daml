@@ -84,7 +84,8 @@ object SqlLedger {
       mm: MetricsManager): Future[Ledger] = {
     implicit val ec: ExecutionContext = DEC
 
-    val dbDispatcher = DbDispatcher(jdbcUrl, noOfShortLivedConnections, noOfStreamingConnections)
+    val dbType = JdbcLedgerDao.jdbcType(jdbcUrl)
+    val dbDispatcher = DbDispatcher(jdbcUrl, dbType, noOfShortLivedConnections, noOfStreamingConnections)
     val ledgerDao = LedgerDao.metered(
       JdbcLedgerDao(
         dbDispatcher,
@@ -92,7 +93,7 @@ object SqlLedger {
         TransactionSerializer,
         ValueSerializer,
         KeyHasher,
-        jdbcUrl))
+        dbType))
 
     val sqlLedgerFactory = SqlLedgerFactory(ledgerDao)
 

@@ -162,7 +162,7 @@ class StandaloneIndexServer(
               writeService,
               indexService,
               StandaloneIndexServer.engine,
-              TimeProvider.Constant(Instant.EPOCH), // XXX: DON'T MERGE THIS - TEMP FOR CANTON !!!
+              TimeProvider.UTC,
               timeModel,
               SandboxConfig.defaultCommandConfig,
               None)(am, esf),

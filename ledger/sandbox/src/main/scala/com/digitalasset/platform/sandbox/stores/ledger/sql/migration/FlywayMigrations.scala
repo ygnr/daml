@@ -10,14 +10,13 @@ import org.slf4j.LoggerFactory
 
 import scala.util.control.NonFatal
 
-class FlywayMigrations(ds: DataSource, jdbcUrl: String) {
+class FlywayMigrations(ds: DataSource, dbType: JdbcLedgerDao.DbType) {
   import FlywayMigrations._
 
   private val logger = LoggerFactory.getLogger(getClass)
 
   def migrate(): Unit = {
     try {
-      val dbType = JdbcLedgerDao.jdbcType(jdbcUrl)
       val flyway = configurationBase(dbType).dataSource(ds).load()
       logger.info(s"running Flyway migration..")
       val stepsTaken = flyway.migrate()
@@ -36,9 +35,7 @@ class FlywayMigrations(ds: DataSource, jdbcUrl: String) {
 object FlywayMigrations {
 
   def configurationBase(dbType: JdbcLedgerDao.DbType) =
-    Flyway.configure.locations(
-      "classpath:db/migration/" + dbType.name,
-      "classpath:db/migration/common")
+    Flyway.configure.locations("classpath:db/migration/" + dbType.name)
 
-  def apply(ds: DataSource, jdbcUrl: String): FlywayMigrations = new FlywayMigrations(ds, jdbcUrl)
+  def apply(ds: DataSource, dbType: JdbcLedgerDao.DbType): FlywayMigrations = new FlywayMigrations(ds, dbType)
 }
