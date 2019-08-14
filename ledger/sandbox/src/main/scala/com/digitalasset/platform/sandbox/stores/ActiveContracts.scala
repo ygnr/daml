@@ -24,6 +24,7 @@ import com.digitalasset.platform.sandbox.stores.ledger.SequencingError.{
   PredicateType,
   TimeBeforeError
 }
+import com.digitalasset.platform.sandbox.stores.ledger.sql.dao.Contract
 
 class ActiveContractsManager[ACS](initialState: => ACS)(implicit ACS: ACS => ActiveContracts[ACS]) {
 
@@ -67,8 +68,9 @@ class ActiveContractsManager[ACS](initialState: => ACS)(implicit ACS: ACS => Act
       transaction: GenTransaction.WithTxValue[Nid, AbsoluteContractId],
       explicitDisclosure: Relation[Nid, Party],
       localImplicitDisclosure: Relation[Nid, Party],
-      globalImplicitDisclosure: Relation[AbsoluteContractId, Party])
-    : Either[Set[SequencingError], ACS] = {
+      globalImplicitDisclosure: Relation[AbsoluteContractId, Party],
+      divulgedContracts: Map[AbsoluteContractId, ContractInst[VersionedValue[AbsoluteContractId]]] =
+        Map.empty): Either[Set[SequencingError], ACS] = {
     val st =
       transaction
         .fold[AddTransactionState](GenTransaction.TopDown, AddTransactionState(initialState)) {
@@ -161,7 +163,22 @@ class ActiveContractsManager[ACS](initialState: => ACS)(implicit ACS: ACS => Act
             }
         }
 
-    st.mapAcs(_ divulgeAlreadyCommittedContract (transactionId, globalImplicitDisclosure))
+    st.mapAcs(_ addContracts divulgedContracts.map {
+        case (cid, contractInst) =>
+          Contract(
+            contractId = cid,
+            let = None,
+            transactionId = None,
+            workflowId = None,
+            witnesses = Set.empty,
+            divulgences = Map.empty, // TODO(oliver): Map[Party, TransactionId]
+            coinst = contractInst,
+            key = None,
+            signatories = Set.empty, // TODO(oliver): get from Node?
+            observers = Set.empty // TODO(oliver): get from Node?
+          )
+      }.toSet)
+      .mapAcs(_ divulgeAlreadyCommittedContract (transactionId, globalImplicitDisclosure))
       .mapAcs(_ addParties st.parties)
       .result
   }
@@ -172,6 +189,7 @@ trait ActiveContracts[+Self] { this: ActiveContracts[Self] =>
   def lookupContract(cid: AbsoluteContractId): Option[ActiveContract]
   def keyExists(key: GlobalKey): Boolean
   def addContract(cid: AbsoluteContractId, c: ActiveContract, keyO: Option[GlobalKey]): Self
+  def addContracts(contracts: Set[Contract]): Self
   def removeContract(cid: AbsoluteContractId, keyO: Option[GlobalKey]): Self
 
   /** Called once for each transaction with the set of parties found in that transaction.

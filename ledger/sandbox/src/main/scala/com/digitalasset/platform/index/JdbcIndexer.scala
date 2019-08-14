@@ -220,10 +220,10 @@ class JdbcIndexer private (
             transaction
               .mapContractIdAndValue(toAbsCoid, _.mapContractId(toAbsCoid))
               .mapNodeId(SandboxEventIdFormatter.fromTransactionId(transactionId, _)),
-            mappedDisclosure
-          ),
+            mappedDisclosure),
           mappedLocalImplicitDisclosure,
-          blindingInfo.globalImplicitDisclosure
+          blindingInfo.globalImplicitDisclosure,
+          referencedContracts.toMap
         )
         ledgerDao
           .storeLedgerEntry(headRef, headRef + 1, Some(offset.toLedgerString), pt)

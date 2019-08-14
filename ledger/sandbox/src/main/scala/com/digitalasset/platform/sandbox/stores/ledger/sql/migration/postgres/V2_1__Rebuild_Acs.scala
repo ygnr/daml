@@ -360,6 +360,8 @@ class V2_1__Rebuild_Acs extends BaseJavaMigration {
           this
         }
 
+        override def addContracts(contracts: Set[Contract]): AcsStoreAcc = ???
+
         override def removeContract(cid: AbsoluteContractId, keyO: Option[GlobalKey]) = {
           archiveContract(offset, cid)
           keyO.foreach(key => removeContractKey(key))
@@ -660,8 +662,8 @@ class V2_1__Rebuild_Acs extends BaseJavaMigration {
 
         Contract(
           absoluteCoid,
-          createdAt.toInstant,
-          transactionId,
+          Some(createdAt.toInstant),
+          Some(transactionId),
           Some(workflowId),
           witnesses,
           divulgences,

@@ -14,6 +14,7 @@ import com.digitalasset.ledger.WorkflowId
 import com.digitalasset.ledger.api.domain.PartyDetails
 import com.digitalasset.platform.sandbox.stores.ActiveContracts._
 import com.digitalasset.platform.sandbox.stores.ledger.SequencingError
+import com.digitalasset.platform.sandbox.stores.ledger.sql.dao.Contract
 import scalaz.syntax.std.map._
 
 case class InMemoryActiveContracts(
@@ -32,6 +33,8 @@ case class InMemoryActiveContracts(
       case Some(key) =>
         copy(contracts = contracts + (cid -> c), keys = keys + (key -> cid))
     }
+
+  override def addContracts(contracts: Set[Contract]): InMemoryActiveContracts = ???
 
   override def removeContract(cid: AbsoluteContractId, keyO: Option[GlobalKey]) = keyO match {
     case None => copy(contracts = contracts - cid)

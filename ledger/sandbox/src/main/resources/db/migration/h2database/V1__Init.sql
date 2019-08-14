@@ -65,6 +65,14 @@ CREATE TABLE disclosures (
 -- but we store it in this form since it would not be viable to traverse
 -- the entries every time we need to gain information as a contract. It's essentially
 -- a materialized view of the contracts state.
+CREATE TABLE contracts_data (
+  id             varchar primary key not null,
+  -- the serialized contract value, using the definition in
+  -- `daml-lf/transaction/src/main/protobuf/com/digitalasset/daml/lf/value.proto`
+  -- and the encoder in `ContractSerializer.scala`.
+  contract       bytea               not null,
+);
+
 CREATE TABLE contracts (
   id             varchar primary key not null,
   -- this is the transaction id that _originated_ the contract.
@@ -89,14 +97,11 @@ CREATE TABLE contracts (
   -- `ledger_entries` -- you'd have to traverse from `create_offset` which
   -- would be prohibitively expensive.
   archive_offset bigint,
-  -- the serialized contract value, using the definition in
-  -- `daml-lf/transaction/src/main/protobuf/com/digitalasset/daml/lf/value.proto`
-  -- and the encoder in `ContractSerializer.scala`.
-  contract       bytea               not null,
   -- only present in contracts for templates that have a contract key definition.
   -- encoded using the definition in
   -- `daml-lf/transaction/src/main/protobuf/com/digitalasset/daml/lf/value.proto`.
   key            bytea,
+  foreign key (id) references contracts_data (id),
   foreign key (transaction_id) references ledger_entries (transaction_id),
   foreign key (create_offset) references ledger_entries (ledger_offset),
   foreign key (archive_offset) references ledger_entries (ledger_offset)
@@ -172,7 +177,7 @@ CREATE TABLE contract_divulgences (
   -- The transaction ID at which the contract was divulged to the given party
   transaction_id varchar not null,
 
-  foreign key (contract_id) references contracts (id),
+  foreign key (contract_id) references contracts_data (id),
   foreign key (ledger_offset) references ledger_entries (ledger_offset),
   foreign key (transaction_id) references ledger_entries (transaction_id),
 

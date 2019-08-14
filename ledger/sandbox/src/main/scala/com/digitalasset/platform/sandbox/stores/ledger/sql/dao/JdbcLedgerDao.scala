@@ -19,7 +19,7 @@ import com.digitalasset.daml.lf.data.Ref._
 import com.digitalasset.daml.lf.data.Relation.Relation
 import com.digitalasset.daml.lf.transaction.Node
 import com.digitalasset.daml.lf.transaction.Node.{GlobalKey, KeyWithMaintainers, NodeCreate}
-import com.digitalasset.daml.lf.value.Value.AbsoluteContractId
+import com.digitalasset.daml.lf.value.Value.{AbsoluteContractId, ContractInst, VersionedValue}
 import com.digitalasset.daml_lf.DamlLf.Archive
 import com.digitalasset.ledger._
 import com.digitalasset.ledger.api.domain.RejectionReason._
@@ -167,14 +167,50 @@ private class JdbcLedgerDao(
       .execute()
 
   private val SQL_INSERT_CONTRACT =
-    """insert into contracts(id, transaction_id, workflow_id, package_id, name, create_offset, contract, key)
-      |values({id}, {transaction_id}, {workflow_id}, {package_id}, {name}, {create_offset}, {contract}, {key})""".stripMargin
+    dbType match {
+      case Postgres =>
+        """insert into contracts(id, transaction_id, workflow_id, package_id, name, create_offset, contract, key)
+          |values({id}, {transaction_id}, {workflow_id}, {package_id}, {name}, {create_offset}, {contract}, {key})""".stripMargin
+      case H2Database =>
+        """insert into contracts(id, transaction_id, workflow_id, package_id, name, create_offset, key)
+          |values({id}, {transaction_id}, {workflow_id}, {package_id}, {name}, {create_offset}, {key})""".stripMargin
+    }
+
+  private val SQL_INSERT_CONTRACT_DATA =
+    dbType match {
+      case Postgres =>
+        sys.error("contract data not yet implemented on Postgres")
+      case H2Database =>
+        """insert into contracts_data(id, contract)
+          |select {id}, {contract}
+          |where {id} not in (select id from contracts_data)""".stripMargin
+    }
 
   private val SQL_INSERT_CONTRACT_WITNESS =
     "insert into contract_witnesses(contract_id, witness) values({contract_id}, {witness})"
 
   private val SQL_INSERT_CONTRACT_KEY_MAINTAINERS =
     "insert into contract_key_maintainers(contract_id, maintainer) values({contract_id}, {maintainer})"
+
+  private def storeContractData(contracts: Set[Contract])(implicit connection: Connection): Unit = {
+    if (contracts.nonEmpty) {
+      val namedContractParams = contracts
+        .map(
+          c =>
+            Seq[NamedParameter](
+              "id" -> c.contractId.coid,
+              "contract" -> contractSerializer
+                .serializeContractInstance(c.coinst)
+                .getOrElse(sys.error(s"failed to serialize contract! cid:${c.contractId.coid}"))
+          )
+        )
+      executeBatchSql(
+        SQL_INSERT_CONTRACT_DATA,
+        namedContractParams
+      )
+    }
+    ()
+  }
 
   private def storeContracts(offset: Long, contracts: immutable.Seq[Contract])(
       implicit connection: Connection): Unit = {
@@ -184,6 +220,23 @@ private class JdbcLedgerDao(
 
     // Part 1: insert the contract data into the 'contracts' table
     if (contracts.nonEmpty) {
+      if (dbType == H2Database) {
+        val namedContractDataParams = contracts
+          .map(
+            c =>
+              Seq[NamedParameter](
+                "id" -> c.contractId.coid,
+                "contract" -> contractSerializer
+                  .serializeContractInstance(c.coinst)
+                  .getOrElse(sys.error(s"failed to serialize contract! cid:${c.contractId.coid}")),
+            )
+          )
+
+        executeBatchSql(
+          SQL_INSERT_CONTRACT_DATA,
+          namedContractDataParams
+        )
+      }
       val namedContractParams = contracts
         .map(
           c =>
@@ -194,9 +247,6 @@ private class JdbcLedgerDao(
               "package_id" -> c.coinst.template.packageId,
               "name" -> c.coinst.template.qualifiedName.toString,
               "create_offset" -> offset,
-              "contract" -> contractSerializer
-                .serializeContractInstance(c.coinst)
-                .getOrElse(sys.error(s"failed to serialize contract! cid:${c.contractId.coid}")),
               "key" -> c.key
                 .map(
                   k =>
@@ -204,7 +254,13 @@ private class JdbcLedgerDao(
                       .serializeValue(k.key)
                       .getOrElse(sys.error(
                         s"failed to serialize contract key value! cid:${c.contractId.coid}")))
-          )
+            ) ++ (dbType match {
+              case Postgres =>
+                Seq[NamedParameter]("contract" -> contractSerializer
+                  .serializeContractInstance(c.coinst)
+                  .getOrElse(sys.error(s"failed to serialize contract! cid:${c.contractId.coid}")))
+              case H2Database => Seq.empty
+            })
         )
 
       executeBatchSql(
@@ -338,12 +394,10 @@ private class JdbcLedgerDao(
           |on conflict on constraint contract_divulgences_idx
           |do nothing""".stripMargin
       case H2Database =>
-        // TODO: Same version as above, but with a check that the contract exists to avoid a referential integrity violation.
-        //   Check why this happens:
         """insert into contract_divulgences(contract_id, party, ledger_offset, transaction_id)
           |select {contract_id}, {party}, {ledger_offset}, {transaction_id}
           |where not exists(select * from contract_divulgences where contract_id = {contract_id} and party = {party})
-          |and {contract_id} in (select id from contracts)""".stripMargin
+          |""".stripMargin
     }
 
   private val SQL_BATCH_INSERT_DIVULGENCES_FROM_TRANSACTION_ID =
@@ -396,7 +450,8 @@ private class JdbcLedgerDao(
       offset: Long,
       tx: Transaction,
       localImplicitDisclosure: Relation[EventId, Party],
-      globalImplicitDisclosure: Relation[AbsoluteContractId, Party])(
+      globalImplicitDisclosure: Relation[AbsoluteContractId, Party],
+      divulgedContracts: Map[AbsoluteContractId, ContractInst[VersionedValue[AbsoluteContractId]]])(
       implicit connection: Connection): Option[RejectionReason] = tx match {
     case Transaction(
         _,
@@ -421,6 +476,11 @@ private class JdbcLedgerDao(
             keyO: Option[GlobalKey]) = {
           storeContract(offset, Contract.fromActiveContract(cid, c))
           keyO.foreach(key => storeContractKey(key, cid))
+          this
+        }
+
+        override def addContracts(contracts: Set[Contract]): AcsStoreAcc = {
+          storeContractData(contracts)
           this
         }
 
@@ -450,14 +510,15 @@ private class JdbcLedgerDao(
           val divulgenceParams = global
             .flatMap {
               case (cid, parties) =>
-                parties.map(
-                  p =>
-                    Seq[NamedParameter](
-                      "contract_id" -> cid.coid,
-                      "party" -> p,
-                      "ledger_offset" -> offset,
-                      "transaction_id" -> transactionId
-                  ))
+                parties.map(p => {
+                  logger.debug(s"Disclosing party ${p.toString} contract id ${cid.coid.toString}")
+                  Seq[NamedParameter](
+                    "contract_id" -> cid.coid,
+                    "party" -> p,
+                    "ledger_offset" -> offset,
+                    "transaction_id" -> transactionId
+                  )
+                })
             }
           // Note: the in-memory ledger only stores divulgence for contracts in the ACS.
           // Do we need here the equivalent to 'contracts.intersectWith(global)', used in the in-memory
@@ -481,7 +542,8 @@ private class JdbcLedgerDao(
         transaction,
         disclosure,
         localImplicitDisclosure,
-        globalImplicitDisclosure
+        globalImplicitDisclosure,
+        divulgedContracts
       )
 
       atr match {
@@ -572,11 +634,20 @@ private class JdbcLedgerDao(
 
     def insertEntry(le: PersistenceEntry)(implicit conn: Connection): PersistenceResponse =
       le match {
-        case PersistenceEntry.Transaction(tx, localImplicitDisclosure, globalImplicitDisclosure) =>
+        case PersistenceEntry.Transaction(
+            tx,
+            localImplicitDisclosure,
+            globalImplicitDisclosure,
+            divulgedContracts) =>
           Try {
             storeTransaction(offset, tx)
 
-            updateActiveContractSet(offset, tx, localImplicitDisclosure, globalImplicitDisclosure)
+            updateActiveContractSet(
+              offset,
+              tx,
+              localImplicitDisclosure,
+              globalImplicitDisclosure,
+              divulgedContracts)
               .flatMap { rejectionReason =>
                 // we need to rollback the existing sql transaction
                 conn.rollback()
@@ -601,7 +672,7 @@ private class JdbcLedgerDao(
           }.recover {
             case NonFatal(e) if (e.getMessage.contains(DUPLICATE_KEY_ERROR)) =>
               logger.warn(
-                "Ignoring duplicate submission for applicationId {}, commandId {}",
+                s"Ignoring duplicate submission for applicationId {}, commandId {}. Error: ${e.toString}",
                 tx.applicationId: Any,
                 tx.commandId)
               conn.rollback()
@@ -652,7 +723,11 @@ private class JdbcLedgerDao(
 
         // Then, write the given ACS. We trust the caller to supply an ACS that is
         // consistent with the given list of ledger entries.
-        activeContracts.foreach(c => storeContract(transactionIdMap(c.transactionId), c))
+        activeContracts.foreach(c =>
+          storeContract(
+            transactionIdMap(c.transactionId.getOrElse(sys.error(
+              s"Active contracts must be associated with a transactionId, but ${c.contractId} isn't"))),
+            c))
 
         updateLedgerEnd(newLedgerEnd, None)
       }
@@ -825,8 +900,12 @@ private class JdbcLedgerDao(
     ~ binaryStream("transaction") map (flatten))
 
   private val SQL_SELECT_CONTRACT =
-    SQL(
-      "select c.*, le.effective_at, le.transaction from contracts c inner join ledger_entries le on c.transaction_id = le.transaction_id where id={contract_id} and archive_offset is null ")
+    SQL(dbType match {
+      case Postgres =>
+        "select c.*, le.effective_at, le.transaction from contracts c inner join ledger_entries le on c.transaction_id = le.transaction_id where id={contract_id} and archive_offset is null "
+      case H2Database =>
+        "select c.*, cd.contract, le.effective_at, le.transaction from contracts c inner join contracts_data cd on c.id = cd.id inner join ledger_entries le on c.transaction_id = le.transaction_id where c.id={contract_id} and archive_offset is null "
+    })
 
   private val SQL_SELECT_WITNESS =
     SQL("select witness from contract_witnesses where contract_id={contract_id}")
@@ -882,8 +961,8 @@ private class JdbcLedgerDao(
 
         Contract(
           absoluteCoid,
-          ledgerEffectiveTime.toInstant,
-          transactionId,
+          Some(ledgerEffectiveTime.toInstant),
+          Some(transactionId),
           workflowId,
           witnesses,
           divulgences,
@@ -968,8 +1047,12 @@ private class JdbcLedgerDao(
     )
 
   private val SQL_SELECT_ACTIVE_CONTRACTS =
-    SQL(
-      "select c.*, le.effective_at, le.transaction from contracts c inner join ledger_entries le on c.transaction_id = le.transaction_id where create_offset <= {offset} and (archive_offset is null or archive_offset > {offset})")
+    SQL(dbType match {
+      case Postgres =>
+        "select c.*, le.effective_at, le.transaction from contracts c inner join ledger_entries le on c.transaction_id = le.transaction_id where create_offset <= {offset} and (archive_offset is null or archive_offset > {offset})"
+      case H2Database =>
+        "select c.*, cd.contract, le.effective_at, le.transaction from contracts c inner join contracts_data cd on c.id = cd.id inner join ledger_entries le on c.transaction_id = le.transaction_id where create_offset <= {offset} and (archive_offset is null or archive_offset > {offset})"
+    })
 
   override def getActiveContractSnapshot()(implicit mat: Materializer): Future[LedgerSnapshot] = {
 

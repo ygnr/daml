@@ -29,8 +29,8 @@ import scala.concurrent.Future
 
 final case class Contract(
     contractId: AbsoluteContractId,
-    let: Instant,
-    transactionId: TransactionId,
+    let: Option[Instant],
+    transactionId: Option[TransactionId],
     workflowId: Option[WorkflowId],
     witnesses: Set[Party],
     divulgences: Map[Party, TransactionId],
@@ -39,24 +39,29 @@ final case class Contract(
     signatories: Set[Party],
     observers: Set[Party]) {
   def toActiveContract: ActiveContract =
-    ActiveContract(
-      let,
-      transactionId,
-      workflowId,
-      coinst,
-      witnesses,
-      divulgences,
-      key,
-      signatories,
-      observers)
+    (for {
+      letMustExist <- let
+      transactionIdMustExist <- transactionId
+    } yield
+      ActiveContract(
+        letMustExist,
+        transactionIdMustExist,
+        workflowId,
+        coinst,
+        witnesses,
+        divulgences,
+        key,
+        signatories,
+        observers)).getOrElse(sys.error(
+      s"Cannot convert contract to active contract as LET and transaction id are required ${contractId.toString}"))
 }
 
 object Contract {
   def fromActiveContract(cid: AbsoluteContractId, ac: ActiveContract): Contract =
     Contract(
       cid,
-      ac.let,
-      ac.transactionId,
+      Some(ac.let),
+      Some(ac.transactionId),
       ac.workflowId,
       ac.witnesses,
       ac.divulgences,
@@ -78,7 +83,9 @@ object PersistenceEntry {
   final case class Transaction(
       entry: LedgerEntry.Transaction,
       localImplicitDisclosure: Relation[EventId, Party],
-      globalImplicitDisclosure: Relation[AbsoluteContractId, Party]
+      globalImplicitDisclosure: Relation[AbsoluteContractId, Party],
+      divulgedContracts: Map[AbsoluteContractId, ContractInst[VersionedValue[AbsoluteContractId]]] =
+        Map.empty
   ) extends PersistenceEntry
   final case class Checkpoint(entry: LedgerEntry.Checkpoint) extends PersistenceEntry
 }
