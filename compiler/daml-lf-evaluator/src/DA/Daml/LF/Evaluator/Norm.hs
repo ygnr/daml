@@ -21,7 +21,7 @@ import qualified Data.Text as Text
 -- entry point -- IO in return type only for dev-time debug
 normalize :: Prog -> IO Prog
 normalize Prog{defs,main} =
-  run (map snd defs) $ do
+  run defs $ do
     --IO $ putStrLn "norm:main.."
     main <- norm main >>= reify
     defs <- forM defs $ \(name,exp) -> do
@@ -159,7 +159,7 @@ instance Applicative Effect where pure = return; (<*>) = ap
 instance Monad Effect where return = Ret; (>>=) = Bind
 
 
-run :: [Exp] -> Effect a -> IO a
+run :: Exp.Defs -> Effect a -> IO a
 run defs e = fst <$> run Set.empty env0 state0 e
   where
     env0 = Map.empty
@@ -191,8 +191,9 @@ run defs e = fst <$> run Set.empty env0 state0 e
 
     getDef :: Int -> Exp
     getDef i =
-        if i >= length defs then error $ "getDef, " <> show (i,length defs) else
-          defs !! i
+      case Map.lookup i defs of
+        Nothing -> error $ "getDef, " <> show i
+        Just (_,exp) -> exp
 
 
 isRecord :: Exp -> Bool

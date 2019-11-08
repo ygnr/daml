@@ -11,13 +11,11 @@ module DA.Daml.LF.Evaluator
     runIntProgArg,
   ) where
 
-import DA.Daml.LF.Evaluator.Exp (Prog(..))
-import DA.Daml.LF.Evaluator.Eval (run,Counts,evalApplicationToInt)
+import DA.Daml.LF.Evaluator.Eval (runIntProgArg)
 import DA.Daml.LF.Evaluator.Simp (DecodedDar(..),simplify)
 import DA.Daml.LF.Evaluator.Norm (normalize)
 import DA.Daml.LF.Proto3.Archive (decodeArchive)
 import DA.Daml.LF.Reader (Dalfs(..))
-import Data.Int (Int64)
 import qualified DA.Daml.LF.Ast as LF
 import qualified Data.ByteString.Lazy as BSL (ByteString,toStrict)
 import qualified Data.Map.Strict as Map
@@ -33,8 +31,3 @@ decodeDalfs Dalfs{mainDalf,dalfs} = do
     decodeDalf dalfBS = do
       Right pair <- return $ decodeArchive $ BSL.toStrict dalfBS
       return pair
-
-runIntProgArg :: Prog -> Int64 -> (Int64,Counts)
-runIntProgArg Prog{defs,main} arg = do
-  run (map snd defs) $ do
-    evalApplicationToInt main arg

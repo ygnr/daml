@@ -76,3 +76,5 @@ makeTasty ddar Test{functionName,arg,expected} = do
     let (actualN,_count) = EV.runIntProgArg progN arg
     --print (name,_count)
     Tasty.assertEqual "normalized" expected actualN
+
+    -- TODO: test the counts get smaller

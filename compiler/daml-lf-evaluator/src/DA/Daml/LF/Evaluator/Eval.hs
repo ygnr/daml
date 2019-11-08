@@ -4,13 +4,11 @@
 {-# LANGUAGE GADTs #-}
 
 module DA.Daml.LF.Evaluator.Eval
-  ( eval,
-    evalApplicationToInt,
-    run, Counts,
+  ( runIntProgArg,
   ) where
 
 import Control.Monad (forM,liftM,ap)
-import DA.Daml.LF.Evaluator.Exp (Exp,Alt)
+import DA.Daml.LF.Evaluator.Exp (Exp,Alt,Prog)
 import DA.Daml.LF.Evaluator.Value (Value,Counts)
 import Data.Map.Strict (Map)
 import Data.Int (Int64)
@@ -19,12 +17,13 @@ import qualified DA.Daml.LF.Evaluator.Value as Value
 import qualified Data.Map.Strict as Map
 
 
-evalApplicationToInt :: Exp -> Int64 -> Effect Int64
-evalApplicationToInt func arg = do
-  fv <- eval func
-  let av = Value.num arg
-  v <- ValueEffect $ Value.apply (fv,av)
-  return $ Value.deNum v
+runIntProgArg :: Prog -> Int64 -> (Int64,Counts)
+runIntProgArg Exp.Prog{defs,main} arg = do
+  run defs $ do
+    fv <- eval main
+    let av = Value.num arg
+    v <- ValueEffect $ Value.apply (fv,av)
+    return $ Value.deNum v
 
 
 eval :: Exp -> Effect Value
@@ -109,7 +108,7 @@ instance Applicative Effect where pure = return; (<*>) = ap
 instance Monad Effect where return = Ret; (>>=) = Bind
 
 
-run :: [Exp] -> Effect a -> (a,Counts)
+run :: Exp.Defs -> Effect a -> (a,Counts)
 run defs e = Value.run $ run env0 e
   where
     run :: Env -> Effect a -> Value.Effect a
@@ -118,11 +117,16 @@ run defs e = Value.run $ run env0 e
       Bind e f -> do v <- run env e; run env (f v)
       GetEnv -> return env
       ModEnv f e -> run (f env) e
-      GetDef i -> do
-        if i >= length defs then error $ "GetDef, " <> show (i,length defs) else
-          return (defs !! i)
+      GetDef i -> return $ getDef i
       ValueEffect x -> x
       RunContext -> return $ run env
+
+    getDef :: Int -> Exp
+    getDef i =
+      case Map.lookup i defs of
+        Nothing -> error $ "getDef, " <> show i
+        Just (_,exp) -> exp
+
 
 type Env = Map Exp.Var Value
 

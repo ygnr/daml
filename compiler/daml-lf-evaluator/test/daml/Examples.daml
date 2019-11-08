@@ -17,6 +17,8 @@ dub_dub_dub x = dub (dub (dub x))
 
 fact n = if n <= 0 then 1 else n * fact (n-1)
 
+triangle n = if n <= 0 then 0 else n + triangle (n-1)
+
 -- Thrice Thrice example
 
 sub x = x - 1

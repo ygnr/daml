@@ -11,7 +11,6 @@ module DA.Daml.LF.Evaluator.Simp
 import Control.Monad (ap,liftM,forM)
 import DA.Daml.LF.Evaluator.Exp (Prog,Exp,Alt)
 import DA.Daml.LF.Evaluator.Value (Value)
-import Data.List (sortBy)
 import Data.Map.Strict (Map)
 import qualified DA.Daml.LF.Ast as LF
 import qualified DA.Daml.LF.Evaluator.Exp as Exp
@@ -201,23 +200,15 @@ data Effect a where
   WithPid :: LF.PackageId -> Effect a -> Effect a
   Share :: Exp.DefKey -> Effect Exp -> Effect Int
 
-type State = (Int,Map Exp.DefKey (Int,Exp))
-
 
 runEffect :: DecodedDar -> Effect Exp -> Prog
 runEffect DecodedDar{mainId,packageMap} e = do
   let state0 = (0,Map.empty)
   let (main,(_,m')) = run mainId state0 e
-  let collected = sortBy (\(_,(i,_)) (_,(j,_)) -> compare i j) $ Map.toList m'
-  let defs = flip map collected $ \(name,(_i,exp)) -> (name,exp)
+  let defs = foldr (\(name,(i,exp)) m -> Map.insert i (name,exp) m) Map.empty (Map.toList m')
   Exp.Prog {defs,main}
+
   where
-
-    getPackage k =
-      case Map.lookup k packageMap of
-        Just v -> v
-        Nothing -> error $ "getPackage, " <> show k
-
     run :: LF.PackageId -> State -> Effect a -> (a,State)
     run pid state = \case
       Fail mes -> error $ "Fail, " <> mes
@@ -239,3 +230,9 @@ runEffect DecodedDar{mainId,packageMap} e = do
                 (exp,state'') = run pid state' e
             (i,state'')
 
+    getPackage k =
+      case Map.lookup k packageMap of
+        Just v -> v
+        Nothing -> error $ "getPackage, " <> show k
+
+type State = (Int, Map Exp.DefKey (Int,Exp))

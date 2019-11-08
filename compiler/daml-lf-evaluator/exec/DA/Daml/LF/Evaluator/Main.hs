@@ -7,9 +7,9 @@ module DA.Daml.LF.Evaluator.Main
 
 import Control.Monad (forM_,unless)
 import DA.Bazel.Runfiles (locateRunfiles,mainWorkspace)
+import DA.Daml.LF.Evaluator.Norm (normalize)
 import DA.Daml.LF.Evaluator.Pretty (ppExp)
 import DA.Daml.LF.Evaluator.Simp (simplify)
-import DA.Daml.LF.Evaluator.Norm (normalize)
 import DA.Daml.LF.Reader (readDalfs,Dalfs(..))
 import Data.Int (Int64)
 import Data.List (isPrefixOf)
@@ -21,6 +21,7 @@ import qualified DA.Daml.LF.Evaluator as EV
 import qualified DA.Daml.LF.Evaluator.Exp as Exp
 import qualified Data.ByteString as BS (readFile)
 import qualified Data.ByteString.Lazy as BSL(fromStrict)
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 
 main :: IO ()
@@ -40,7 +41,7 @@ data Conf = Conf
 defaultConf :: Conf
 defaultConf = Conf
   { mode = EvalAndNorm
-  , funcName = "thrice_thrice_sub"
+  , funcName = "thrice_sub"
   , arg = 0
   }
 
@@ -75,8 +76,9 @@ runProg title prog arg = do
   let Exp.Prog{defs,main} = prog
   putStrLn $ "--["<>title<>"]----------------------------"
   putStrLn $ "(main): " <> ppExp main
-  forM_ (zip [0::Integer ..] defs) $ \(i,(Exp.DefKey(_,_,name),exp)) ->
+  forM_ (Map.toList defs) $ \(i,(Exp.DefKey(_,_,name),exp)) ->
     putStrLn $ show i <> "("<> Text.unpack (LF.unExprValName name) <> "): " <> ppExp exp
+
   putStrLn $ "--------------------------------------------------"
   let (res,count) = EV.runIntProgArg prog arg
   putStrLn $ "arg = " <> show arg <> ", result = " <> show res <> ", #apps = " <> show count

@@ -2,11 +2,12 @@
 -- SPDX-License-Identifier: Apache-2.0
 
 module DA.Daml.LF.Evaluator.Exp
-  ( Exp(..), Alt(..), Var, Prog(..), DefKey(..), FieldName,
+  ( Exp(..), Alt(..), Var, Prog(..), Defs, DefKey(..), FieldName,
   ) where
 
 import qualified DA.Daml.LF.Ast as LF
 import DA.Daml.LF.Evaluator.Value(Value,FieldName,Tag)
+import Data.Map.Strict (Map)
 
 data Exp
   = Lit Value
@@ -26,8 +27,10 @@ type Var = LF.ExprVarName
 data Alt = Alt {tag :: Tag, bound :: [Var], rhs :: Exp}
   deriving (Show)
 
-data Prog = Prog { defs :: [(DefKey,Exp)], main :: Exp }
+data Prog = Prog { defs :: Defs, main :: Exp }
   deriving (Show)
+
+type Defs = Map Int (DefKey,Exp)
 
 newtype DefKey = DefKey (LF.PackageId, LF.ModuleName, LF.ExprValName)
   deriving (Eq,Ord,Show)
