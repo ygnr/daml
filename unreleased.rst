@@ -25,3 +25,4 @@ HEAD — ongoing
 - [Sandbox] Add the option to start the sandbox with JWT based authentication. See `issue #3363 <https://github.com/digital-asset/daml/issues/3363>`__.
 - [Sandbox] Fixed a bug in the SQL backend that caused the database to be flooded with requests when streaming out transactions.
 - [Extractor - Experimental] Fix bug in reading TLS parameters.
+- [RxJava Bindings] Added a method to the ``Bot`` class allowing users to specify a ``Scheduler`` to use for running the bot. See `issue #2356 <https://github.com/digital-asset/daml/issues/2356?`__.
