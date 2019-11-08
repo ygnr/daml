@@ -8,7 +8,7 @@ module DA.Daml.LF.Evaluator.Norm
   ) where
 
 import Control.Monad (forM,liftM,ap)
-import DA.Daml.LF.Evaluator.Exp (Prog(..),Exp,Alt,Var,FieldName)
+import DA.Daml.LF.Evaluator.Exp (Prog(..),Exp,Alt,FieldName)
 import Data.Map.Strict (Map)
 import Data.Set (Set)
 import qualified DA.Daml.LF.Ast as LF
@@ -22,10 +22,8 @@ import qualified Data.Text as Text
 normalize :: Prog -> IO Prog
 normalize Prog{defs,main} =
   run defs $ do
-    --IO $ putStrLn "norm:main.."
     main <- norm main >>= reify
     defs <- forM defs $ \(name,exp) -> do
-      --IO $ print ("norm"::String,name)
       exp <- norm exp >>= reify
       return (name,exp)
     return $ Prog{defs,main}
@@ -84,14 +82,14 @@ norm = \case
 normAlt :: Alt -> Effect Alt
 normAlt = \case
   Exp.Alt{tag,bound,rhs} -> do
-    -- TODO: think need to generate new vars here !
-    rhs <- underBoundVars bound $ norm rhs >>= reify
+    nameMapping <- do
+      forM bound $ \x -> do
+        y <- Fresh
+        return (x,y)
+    let bound = map snd nameMapping
+    let f env = foldr (\(x,y) -> Map.insert x (Syntax $ Exp.Var y)) env nameMapping
+    rhs <- ModEnv f $ norm rhs >>= reify
     return $ Exp.Alt{tag,bound,rhs}
-
-underBoundVars :: [Var] -> Effect a -> Effect a
-underBoundVars xs e = do
-  let f env = foldr (\x -> Map.insert x (Syntax $ Exp.Var x)) env xs
-  ModEnv f e
 
 
 data Norm -- Normalized Expression
