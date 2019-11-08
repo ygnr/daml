@@ -7,12 +7,13 @@ module DA.Daml.LF.Evaluator
   ( DecodedDar(..),
     decodeDalfs,
     simplify,
+    Config(..), defaultConfig,
     normalize,
     runIntProgArg, Counts(..),
   ) where
 
 import DA.Daml.LF.Evaluator.Eval (runIntProgArg)
-import DA.Daml.LF.Evaluator.Norm (normalize)
+import DA.Daml.LF.Evaluator.Norm (normalize,Config(..),defaultConfig)
 import DA.Daml.LF.Evaluator.Simp (DecodedDar(..),simplify)
 import DA.Daml.LF.Evaluator.Value (Counts(..))
 import DA.Daml.LF.Proto3.Archive (decodeArchive)

@@ -68,7 +68,8 @@ runConf = \case
     let prog = simplify ddar mn vn
     runProg ("original") prog arg
     unless (mode == JustEval) $ do
-      progN <- normalize prog
+      let config = EV.Config { alwaysDuplicatable = True } -- easier to read
+      progN <- normalize config prog
       runProg ("normalized") progN arg
 
 runProg :: String -> Exp.Prog -> Int64 -> IO ()

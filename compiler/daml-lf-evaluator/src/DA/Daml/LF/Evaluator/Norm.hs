@@ -5,7 +5,7 @@
 {-# LANGUAGE RecursiveDo #-}
 
 module DA.Daml.LF.Evaluator.Norm
-  ( normalize,
+  ( Config(..), normalize, defaultConfig,
   ) where
 
 import Control.Monad (forM,liftM,ap)
@@ -19,12 +19,17 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 
 
--- entry point -- IO in return type only for dev-time debug
-normalize :: Prog -> IO Prog
-normalize Prog{defs,main} = do
-  (defs,main) <- run defs (norm main >>= reify)
-  return $ Prog{defs,main}
+data Config = Config { alwaysDuplicatable :: Bool }
 
+defaultConfig :: Config
+defaultConfig = Config { alwaysDuplicatable = False }
+
+
+-- entry point -- IO in return type only for dev-time debug
+normalize :: Config -> Prog -> IO Prog
+normalize config Prog{defs,main} = do
+  (defs,main) <- run config defs (norm main >>= reify)
+  return $ Prog{defs,main}
 
 norm :: Exp -> Effect Norm
 norm = \case
@@ -99,24 +104,24 @@ apply = \case
     exp <- reify arg
     return $ Syntax (Exp.App func exp)
   (Record _, _) -> error "Norm,apply,record"
-  (Macro func, arg@(Syntax exp)) ->
-    if isAtomic exp
+  (Macro func, arg) -> do
+    Config{alwaysDuplicatable} <- GetConfig
+    if alwaysDuplicatable || duplicatable arg
     then func arg
     else do
       x <- Fresh
+      rhs <- reify arg
       body <- func (Syntax (Exp.Var x)) >>= reify
-      return $ Syntax $ Exp.Let x exp body
-  (Macro func, arg) ->
-    func arg
+      return $ Syntax $ Exp.Let x rhs body
 
-sayEverythingIsAtomic :: Bool
-sayEverythingIsAtomic = False
-
-isAtomic :: Exp -> Bool
-isAtomic = \case
-  Exp.Lit{} -> True
-  Exp.Var{} -> True
-  _ -> sayEverythingIsAtomic
+duplicatable :: Norm -> Bool
+duplicatable = \case
+  Record{} -> True
+  Macro{} -> True
+  Syntax exp -> case exp of
+    Exp.Lit{} -> True
+    Exp.Var{} -> True
+    _ -> False
 
 reify :: Norm -> Effect Exp
 reify = \case
@@ -144,6 +149,7 @@ normProjectRec fieldName = \case
 data Effect a where
   Ret :: a -> Effect a
   Bind :: Effect a -> (a -> Effect b) -> Effect b
+  GetConfig :: Effect Config
   IO :: IO a -> Effect a
   GetEnv :: Effect Env
   ModEnv :: (Env -> Env) -> Effect a -> Effect a
@@ -158,24 +164,25 @@ instance Applicative Effect where pure = return; (<*>) = ap
 instance Monad Effect where return = Ret; (>>=) = Bind
 
 
-run :: Defs -> Effect a -> IO (Defs, a)
-run defs e = do
-  (v,State{retainedDefs=defs}) <- run Set.empty env0 state0 e
+run :: Config -> Defs -> Effect a -> IO (Defs, a)
+run config defs e = do
+  (v,State{retainedDefs=defs}) <- loop Set.empty env0 state0 e
   return (defs,v)
 
   where
     env0 = Map.empty
     state0 = State { unique = 0, retainedDefs = Map.empty }
 
-    run :: InlineScope -> Env -> State -> Effect a -> IO (a,State)
-    run scope env state = \case
+    loop :: InlineScope -> Env -> State -> Effect a -> IO (a,State)
+    loop scope env state = \case
       Ret x -> return (x,state)
-      Bind e f -> do (v,state') <- run scope env state e; run scope env state' (f v)
+      Bind e f -> do (v,state') <- loop scope env state e; loop scope env state' (f v)
       IO io -> do x <- io; return (x,state)
+      GetConfig -> return (config,state)
       GetEnv -> return (env,state)
-      ModEnv f e -> run scope (f env) state e
+      ModEnv f e -> loop scope (f env) state e
       Save -> return (Restore scope env, state)
-      Restore scope env e -> run scope env state e
+      Restore scope env e -> loop scope env state e
 
       Fresh -> do
         let State{unique} = state
@@ -192,11 +199,11 @@ run defs e = do
         case Map.lookup i retainedDefs of
           Just _ -> return (Syntax $ Exp.Ref i, state)
           Nothing ->
-            if doInline then run (Set.insert i scope) env state (norm exp)
+            if doInline then loop (Set.insert i scope) env state (norm exp)
             else mdo
               let state1 = state { retainedDefs = Map.insert i (name,expN) retainedDefs }
-              (normalized,state2) <- run scope env state1 (norm exp)
-              (expN,state3) <- run scope env state2 (reify normalized)
+              (normalized,state2) <- loop scope env state1 (norm exp)
+              (expN,state3) <- loop scope env state2 (reify normalized)
               return (normalized,state3)
 
     getDef :: Int -> (DefKey,Exp)
