@@ -5,13 +5,15 @@ module DA.Daml.LF.Evaluator.Main
   ( main
   ) where
 
-import Control.Monad (forM_)
+import Control.Monad (forM_,unless)
 import DA.Bazel.Runfiles (locateRunfiles,mainWorkspace)
 import DA.Daml.LF.Evaluator.Pretty (ppExp)
 import DA.Daml.LF.Evaluator.Simp (simplify)
 import DA.Daml.LF.Evaluator.Norm (normalize)
 import DA.Daml.LF.Reader (readDalfs,Dalfs(..))
 import Data.Int (Int64)
+import Data.List (isPrefixOf)
+import System.Environment (getArgs)
 import System.FilePath ((</>), isExtensionOf)
 import qualified "zip-archive" Codec.Archive.Zip as ZipArchive
 import qualified DA.Daml.LF.Ast as LF
@@ -21,52 +23,64 @@ import qualified Data.ByteString as BS (readFile)
 import qualified Data.ByteString.Lazy as BSL(fromStrict)
 import qualified Data.Text as Text
 
-example :: (String,Int64)
---example = ("dub_dub_dub",1)
---example = ("sub",0)
---example = ("thrice_sub",0)
---example = ("thrice_thrice_sub",0)
---example = ("fact",5)
---example = ("nthPrime",100)
-example = ("run_makeDecimal",7)
-
 main :: IO ()
 main = do
-  filename <- locateRunfiles (mainWorkspace </> "compiler/daml-lf-evaluator/examples.dar")
-  dalfs <- readDar filename
-  ddar <- EV.decodeDalfs dalfs
-  let (functionName,arg) = example
-  let mn = LF.ModuleName ["Examples"]
-  let vn = LF.ExprValName $ Text.pack functionName
-  let prog = simplify ddar mn vn
-  let title = functionName
-  putStrLn $ "arg = " <> show arg
+  args <- getArgs
+  let conf = parseArgs args
+  runConf conf
 
-  showProg title prog
-  showEvaluation "evaluation,original" prog arg
+data Mode = JustEval | EvalAndNorm deriving (Eq)
 
-  putStrLn $ "normalizing..."
+data Conf = Conf
+  { mode :: Mode
+  , funcName :: String
+  , arg :: Int64
+  }
 
-  progN <- normalize prog
-  showProg "normalized" progN
-  showEvaluation "evaluation,normalized" progN arg
+defaultConf :: Conf
+defaultConf = Conf
+  { mode = EvalAndNorm
+  , funcName = "thrice_thrice_sub"
+  , arg = 0
+  }
 
+parseArgs :: [String] -> Conf
+parseArgs args = loop args defaultConf where
+  loop args conf = case args of
+    "--just-eval":rest -> loop rest $ conf { mode = JustEval }
+    [] -> conf
+    [funcName] -> conf { funcName }
+    funcName:arg:rest ->
+      if "--" `isPrefixOf` arg
+      then loop (arg:rest) $ conf { funcName }
+      else loop rest $ conf { funcName, arg = read arg }
 
-showEvaluation :: String -> Exp.Prog -> Int64 -> IO ()
-showEvaluation title prog arg = do
-  putStrLn $ "--["<>title<>"]----------------------------"
-  let (res,count) = EV.runIntProgArg prog arg
-  putStrLn $ "result = " <> show res <> ", #apps = " <> show count
+runConf :: Conf -> IO ()
+runConf = \case
+  Conf{mode,funcName,arg} -> do
+    filename <- locateRunfiles (mainWorkspace </> "compiler/daml-lf-evaluator/examples.dar")
+    dalfs <- readDar filename
+    ddar <- EV.decodeDalfs dalfs
+    let mn = LF.ModuleName ["Examples"]
+    let vn = LF.ExprValName $ Text.pack funcName
+    putStrLn $ "==["<>funcName<>"]============================"
+    let prog = simplify ddar mn vn
+    runProg ("original") prog arg
+    unless (mode == JustEval) $ do
+      progN <- normalize prog
+      runProg ("normalized") progN arg
 
-
-showProg :: String -> Exp.Prog -> IO ()
-showProg title prog = do
+runProg :: String -> Exp.Prog -> Int64 -> IO ()
+runProg title prog arg = do
   let Exp.Prog{defs,main} = prog
-  putStrLn $ "==[" <> title <> "]================================================"
-  putStrLn $ ppExp main
-  putStrLn "--[defs]----------------------------"
+  putStrLn $ "--["<>title<>"]----------------------------"
+  putStrLn $ "(main): " <> ppExp main
   forM_ (zip [0::Integer ..] defs) $ \(i,(Exp.DefKey(_,_,name),exp)) ->
     putStrLn $ show i <> "("<> Text.unpack (LF.unExprValName name) <> "): " <> ppExp exp
+  putStrLn $ "--------------------------------------------------"
+  let (res,count) = EV.runIntProgArg prog arg
+  putStrLn $ "arg = " <> show arg <> ", result = " <> show res <> ", #apps = " <> show count
+  putStrLn $ "--------------------------------------------------"
 
 readDar :: FilePath -> IO Dalfs
 readDar inFile = do
