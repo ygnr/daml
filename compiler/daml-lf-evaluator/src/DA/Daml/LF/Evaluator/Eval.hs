@@ -89,7 +89,7 @@ evalAlt v = \case
       | tag /= tag' -> Nothing
       | length xs /= length vs -> error $ "evalAlt, mismatch length, " <> Value.unTag tag
       | otherwise -> do
-          let f :: Env -> Env = foldl (.) id $ flip map (zip xs vs) $ \(x,v) -> Map.insert x v
+          let f env = foldr (\(x,v) -> Map.insert x v) env (zip xs vs)
           Just $ ModEnv f $ eval rhs
     _ ->
       error $ "evalAlt, unexpected value, " <> show v

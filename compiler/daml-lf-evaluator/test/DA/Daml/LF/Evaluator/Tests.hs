@@ -69,5 +69,10 @@ makeTasty ddar Test{functionName,arg,expected} = do
   Tasty.testCase name $ do
     let prog = EV.simplify ddar mn vn
     let (actual,_count) = EV.runIntProgArg prog arg
-    Tasty.assertEqual "" expected actual
-    -- TODO: test normalization for all examples
+    --print (name,_count)
+    Tasty.assertEqual "original" expected actual
+
+    progN <- EV.normalize prog
+    let (actualN,_count) = EV.runIntProgArg progN arg
+    --print (name,_count)
+    Tasty.assertEqual "normalized" expected actualN

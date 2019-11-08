@@ -27,7 +27,8 @@ example :: (String,Int64)
 --example = ("thrice_sub",0)
 --example = ("thrice_thrice_sub",0)
 --example = ("fact",5)
-example = ("nthPrime",100)
+--example = ("nthPrime",100)
+example = ("run_makeDecimal",7)
 
 main :: IO ()
 main = do

@@ -8,7 +8,7 @@ module DA.Daml.LF.Evaluator.Norm
   ) where
 
 import Control.Monad (forM,liftM,ap)
-import DA.Daml.LF.Evaluator.Exp (Prog(..),Exp,Alt,FieldName)
+import DA.Daml.LF.Evaluator.Exp (Prog(..),Exp,Alt,Var,FieldName)
 import Data.Map.Strict (Map)
 import Data.Set (Set)
 import qualified DA.Daml.LF.Ast as LF
@@ -18,12 +18,14 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 
 
--- entry point -- IO just for dev debug
+-- entry point -- IO in return type only for dev-time debug
 normalize :: Prog -> IO Prog
 normalize Prog{defs,main} =
   run (map snd defs) $ do
+    --IO $ putStrLn "norm:main.."
     main <- norm main >>= reify
     defs <- forM defs $ \(name,exp) -> do
+      --IO $ print ("norm"::String,name)
       exp <- norm exp >>= reify
       return (name,exp)
     return $ Prog{defs,main}
@@ -82,8 +84,13 @@ norm = \case
 normAlt :: Alt -> Effect Alt
 normAlt = \case
   Exp.Alt{tag,bound,rhs} -> do
-    rhs <- norm rhs >>= reify
+    rhs <- underBoundVars bound $ norm rhs >>= reify
     return $ Exp.Alt{tag,bound,rhs}
+
+underBoundVars :: [Var] -> Effect a -> Effect a
+underBoundVars xs e = do
+  let f env = foldr (\x -> Map.insert x (Syntax $ Exp.Var x)) env xs
+  ModEnv f e
 
 
 data Norm -- Normalized Expression
@@ -145,6 +152,7 @@ data Effect a where
   Fresh :: Effect Exp.Var
   Save :: Effect (Effect a -> Effect a)
   Restore :: InlineScope -> Env -> Effect a -> Effect a
+  IO :: IO a -> Effect a
 
 instance Functor Effect where fmap = liftM
 instance Applicative Effect where pure = return; (<*>) = ap
@@ -159,6 +167,7 @@ run defs e = fst <$> run Set.empty env0 state0 e
 
     run :: InlineScope -> Env -> State -> Effect a -> IO (a,State)
     run scope env state = \case
+      IO io -> do x <- io; return (x,state)
       Ret x -> return (x,state)
       Bind e f -> do (v,state') <- run scope env state e; run scope env state' (f v)
       GetEnv -> return (env,state)
@@ -170,7 +179,7 @@ run defs e = fst <$> run Set.empty env0 state0 e
         let exp = getDef i
         let inlineAnyway = isRecord exp
         let cut = doing && not inlineAnyway
-        --putStrLn $ "MaybeInline, " <> show i <> ", " <> show scope <> (if cut then " -CUT" else "")
+        -- putStrLn $ "Inline, " <> show i <> ", " <> show scope <> (if cut then " -CUT" else "")
         if cut then run scope env state (k Nothing) else do
           run (Set.insert i scope) env state (k (Just exp))
 
