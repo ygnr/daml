@@ -2,13 +2,14 @@
 -- SPDX-License-Identifier: Apache-2.0
 
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RecursiveDo #-}
 
 module DA.Daml.LF.Evaluator.Norm
   ( normalize,
   ) where
 
 import Control.Monad (forM,liftM,ap)
-import DA.Daml.LF.Evaluator.Exp (Prog(..),Exp,Alt,FieldName)
+import DA.Daml.LF.Evaluator.Exp (Prog(..),Exp,Defs,DefKey,Alt,FieldName)
 import Data.Map.Strict (Map)
 import Data.Set (Set)
 import qualified DA.Daml.LF.Ast as LF
@@ -20,17 +21,14 @@ import qualified Data.Text as Text
 
 -- entry point -- IO in return type only for dev-time debug
 normalize :: Prog -> IO Prog
-normalize Prog{defs,main} =
-  run defs $ do
-    main <- norm main >>= reify
-    defs <- forM defs $ \(name,exp) -> do
-      exp <- norm exp >>= reify
-      return (name,exp)
-    return $ Prog{defs,main}
+normalize Prog{defs,main} = do
+  (defs,main) <- run defs (norm main >>= reify)
+  return $ Prog{defs,main}
+
 
 norm :: Exp -> Effect Norm
 norm = \case
-  e@(Exp.Lit _v) -> return $ Syntax e
+  Exp.Lit v -> return $ Syntax $ Exp.Lit v
 
   Exp.Var x -> do
     env <- GetEnv
@@ -73,10 +71,8 @@ norm = \case
     alts <- mapM normAlt alts
     return $ Syntax $ Exp.Match {scrut,alts}
 
-  e@(Exp.Ref i) -> do
-    MaybeInline i $ \case
-      Nothing -> return $ Syntax e
-      Just exp -> norm exp
+  Exp.Ref i ->
+    Share i
 
 
 normAlt :: Alt -> Effect Alt
@@ -113,11 +109,14 @@ apply = \case
   (Macro func, arg) ->
     func arg
 
+sayEverythingIsAtomic :: Bool
+sayEverythingIsAtomic = False
+
 isAtomic :: Exp -> Bool
 isAtomic = \case
   Exp.Lit{} -> True
   Exp.Var{} -> True
-  _ -> False
+  _ -> sayEverythingIsAtomic
 
 reify :: Norm -> Effect Exp
 reify = \case
@@ -145,42 +144,38 @@ normProjectRec fieldName = \case
 data Effect a where
   Ret :: a -> Effect a
   Bind :: Effect a -> (a -> Effect b) -> Effect b
+  IO :: IO a -> Effect a
   GetEnv :: Effect Env
   ModEnv :: (Env -> Env) -> Effect a -> Effect a
-  MaybeInline :: Int -> (Maybe Exp -> Effect a) -> Effect a
   Fresh :: Effect Exp.Var
+  Share :: Int -> Effect Norm
   Save :: Effect (Effect a -> Effect a)
   Restore :: InlineScope -> Env -> Effect a -> Effect a
-  IO :: IO a -> Effect a
+
 
 instance Functor Effect where fmap = liftM
 instance Applicative Effect where pure = return; (<*>) = ap
 instance Monad Effect where return = Ret; (>>=) = Bind
 
 
-run :: Exp.Defs -> Effect a -> IO a
-run defs e = fst <$> run Set.empty env0 state0 e
+run :: Defs -> Effect a -> IO (Defs, a)
+run defs e = do
+  (v,State{retainedDefs=defs}) <- run Set.empty env0 state0 e
+  return (defs,v)
+
   where
     env0 = Map.empty
-    state0 = State { unique = 0 }
+    state0 = State { unique = 0, retainedDefs = Map.empty }
 
     run :: InlineScope -> Env -> State -> Effect a -> IO (a,State)
     run scope env state = \case
-      IO io -> do x <- io; return (x,state)
       Ret x -> return (x,state)
       Bind e f -> do (v,state') <- run scope env state e; run scope env state' (f v)
+      IO io -> do x <- io; return (x,state)
       GetEnv -> return (env,state)
       ModEnv f e -> run scope (f env) state e
       Save -> return (Restore scope env, state)
       Restore scope env e -> run scope env state e
-      MaybeInline i k -> do
-        let doing = Set.member i scope
-        let exp = getDef i
-        let inlineAnyway = isRecord exp
-        let cut = doing && not inlineAnyway
-        -- putStrLn $ "Inline, " <> show i <> ", " <> show scope <> (if cut then " -CUT" else "")
-        if cut then run scope env state (k Nothing) else do
-          run (Set.insert i scope) env state (k (Just exp))
 
       Fresh -> do
         let State{unique} = state
@@ -188,11 +183,27 @@ run defs e = fst <$> run Set.empty env0 state0 e
         let x = LF.ExprVarName $ Text.pack ("_u"<> show unique) -- assumes no clash
         return (x,state')
 
-    getDef :: Int -> Exp
+      Share i -> do
+        -- directly calls: norm/reify
+        let (name,exp) = getDef i
+        let doInline = isRecord exp || not (Set.member i scope)
+        let State{retainedDefs} = state
+        --print ("Share"::String,i,doInline, scope, Map.keys retainedDefs)
+        case Map.lookup i retainedDefs of
+          Just _ -> return (Syntax $ Exp.Ref i, state)
+          Nothing ->
+            if doInline then run (Set.insert i scope) env state (norm exp)
+            else mdo
+              let state1 = state { retainedDefs = Map.insert i (name,expN) retainedDefs }
+              (normalized,state2) <- run scope env state1 (norm exp)
+              (expN,state3) <- run scope env state2 (reify normalized)
+              return (normalized,state3)
+
+    getDef :: Int -> (DefKey,Exp)
     getDef i =
       case Map.lookup i defs of
         Nothing -> error $ "getDef, " <> show i
-        Just (_,exp) -> exp
+        Just x -> x
 
 
 isRecord :: Exp -> Bool
@@ -200,7 +211,8 @@ isRecord = \case
   Exp.Rec{} -> True
   _ -> False
 
+
 type Env = Map Exp.Var Norm
-data State = State { unique :: Unique }
+data State = State { unique :: Unique, retainedDefs :: Exp.Defs }
 type Unique = Int
 type InlineScope = Set Int
