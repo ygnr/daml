@@ -84,6 +84,7 @@ norm = \case
 normAlt :: Alt -> Effect Alt
 normAlt = \case
   Exp.Alt{tag,bound,rhs} -> do
+    -- TODO: think need to generate new vars here !
     rhs <- underBoundVars bound $ norm rhs >>= reify
     return $ Exp.Alt{tag,bound,rhs}
 

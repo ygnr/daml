@@ -8,12 +8,13 @@ module DA.Daml.LF.Evaluator
     decodeDalfs,
     simplify,
     normalize,
-    runIntProgArg,
+    runIntProgArg, Counts(..),
   ) where
 
 import DA.Daml.LF.Evaluator.Eval (runIntProgArg)
-import DA.Daml.LF.Evaluator.Simp (DecodedDar(..),simplify)
 import DA.Daml.LF.Evaluator.Norm (normalize)
+import DA.Daml.LF.Evaluator.Simp (DecodedDar(..),simplify)
+import DA.Daml.LF.Evaluator.Value (Counts(..))
 import DA.Daml.LF.Proto3.Archive (decodeArchive)
 import DA.Daml.LF.Reader (Dalfs(..))
 import qualified DA.Daml.LF.Ast as LF

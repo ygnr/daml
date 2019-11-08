@@ -9,8 +9,7 @@ module DA.Daml.LF.Evaluator.Value
     bool, num, deNum,
     apply,
     projectRec,
-    Effect, run,
-    Counts,
+    Effect, run, Counts(..),
   ) where
 
 import Control.Monad (ap,liftM)
