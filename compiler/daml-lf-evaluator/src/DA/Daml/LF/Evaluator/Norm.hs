@@ -193,7 +193,10 @@ run config defs e = do
       Share i -> do
         -- directly calls: norm/reify
         let (name,exp) = getDef i
-        let doInline = isRecord exp || not (Set.member i scope)
+        let doInline =
+              not (isDirectlyRecursive i exp) &&
+              (isRecord exp || not (Set.member i scope))
+
         let State{retainedDefs} = state
         --print ("Share"::String,i,doInline, scope, Map.keys retainedDefs)
         case Map.lookup i retainedDefs of
@@ -223,3 +226,19 @@ type Env = Map Exp.Var Norm
 data State = State { unique :: Unique, retainedDefs :: Exp.Defs }
 type Unique = Int
 type InlineScope = Set Int
+
+
+isDirectlyRecursive :: Int -> Exp -> Bool
+isDirectlyRecursive i = look where
+  look :: Exp -> Bool
+  look = \case
+    Exp.Lit{} -> False
+    Exp.Var{} -> False
+    Exp.App e1 e2 -> look e1 || look e2
+    Exp.Lam _ body -> look body
+    Exp.Let _ rhs body -> look rhs || look body
+    Exp.Rec elems -> any (look . snd) elems
+    Exp.Dot exp _ -> look exp
+    Exp.Con _ elems -> any look elems
+    Exp.Match{scrut,alts} -> look scrut || any (\Exp.Alt{rhs} -> look rhs) alts
+    Exp.Ref j -> (i==j)
