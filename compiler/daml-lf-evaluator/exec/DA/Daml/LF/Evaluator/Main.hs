@@ -66,11 +66,11 @@ runConf = \case
     let vn = LF.ExprValName $ Text.pack funcName
     putStrLn $ "==["<>funcName<>"]============================"
     let prog = simplify ddar mn vn
-    runProg ("original") prog arg
+    runProg "original" prog arg
     unless (mode == JustEval) $ do
       let config = EV.Config { alwaysDuplicatable = True } -- easier to read
       progN <- normalize config prog
-      runProg ("normalized") progN arg
+      runProg "normalized" progN arg
 
 runProg :: String -> Exp.Prog -> Int64 -> IO ()
 runProg title prog arg = do
@@ -80,10 +80,10 @@ runProg title prog arg = do
   forM_ (Map.toList defs) $ \(i,(Exp.DefKey(_,_,name),exp)) ->
     putStrLn $ show i <> "("<> Text.unpack (LF.unExprValName name) <> "): " <> ppExp exp
 
-  putStrLn $ "--------------------------------------------------"
+  putStrLn "--------------------------------------------------"
   let (res,count) = EV.runIntProgArg prog arg
   putStrLn $ "arg = " <> show arg <> ", result = " <> show res <> ", #apps = " <> show count
-  putStrLn $ "--------------------------------------------------"
+  putStrLn  "--------------------------------------------------"
 
 readDar :: FilePath -> IO Dalfs
 readDar inFile = do

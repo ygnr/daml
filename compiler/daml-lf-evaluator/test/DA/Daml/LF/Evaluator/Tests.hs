@@ -29,7 +29,7 @@ tests =
   [ Test "fact" 4 24
   , Test "fact" 5 120
 
-  , Test "dub_dub_dub" 1 (8)
+  , Test "dub_dub_dub" 1 8
 
   , Test "sub" 0 (-1)
   , Test "thrice_sub" 0 (-3)
