@@ -19,7 +19,7 @@ import com.digitalasset.ledger.api.domain.LedgerId
 import com.digitalasset.ledger.server.apiserver.{ApiServer, ApiServices, LedgerApiServer}
 import com.digitalasset.platform.common.LedgerIdMode
 import com.digitalasset.platform.common.logging.NamedLoggerFactory
-import com.digitalasset.platform.sandbox.SandboxServer.{asyncTolerance, createInitialState, logger}
+import com.digitalasset.platform.sandbox.SandboxServer._
 import com.digitalasset.platform.sandbox.banner.Banner
 import com.digitalasset.platform.sandbox.config.SandboxConfig
 import com.digitalasset.platform.sandbox.metrics.MetricsManager
@@ -82,15 +82,6 @@ object SandboxServer {
         (acs, records, Some(ledgerTime))
     }
   }
-}
-
-class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends AutoCloseable {
-
-  // Name of this participant
-  // TODO: Pass this info in command-line (See issue #2025)
-  val participantId: ParticipantId = Ref.LedgerString.assertFromString("sandbox-participant")
-
-  private val authService: AuthService = config.authService.getOrElse(AuthServiceWildcard)
 
   case class ApiServerState(
       ledgerId: LedgerId,
@@ -119,8 +110,6 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
     }
   }
 
-  @volatile private var sandboxState: SandboxState = _
-
   case class SandboxState(
       apiServerState: ApiServerState,
       infra: Infrastructure,
@@ -131,26 +120,18 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
       apiServerState.close()
       infra.close()
     }
-
-    def resetAndRestartServer(): Future[Unit] = {
-      implicit val ec: ExecutionContext = sandboxState.infra.executionContext
-      val apiServicesClosed = apiServerState.apiServer.servicesClosed()
-      //need to run this async otherwise the callback kills the server under the in-flight reset service request!
-
-      Future {
-        apiServerState.close() // fully tear down the old server
-        //TODO: eliminate the state mutation somehow
-        //yes, it's horrible that we mutate the state here, but believe me, it's still an improvement to what we had before!
-        sandboxState = copy(
-          apiServerState =
-            buildAndStartApiServer(infra, sandboxState.packageStore, SqlStartMode.AlwaysReset))
-      }
-
-      // waits for the services to be closed, so we can guarantee that future API calls after finishing the reset will never be handled by the old one
-      apiServicesClosed
-    }
-
   }
+}
+
+class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends AutoCloseable {
+
+  // Name of this participant
+  // TODO: Pass this info in command-line (See issue #2025)
+  val participantId: ParticipantId = Ref.LedgerString.assertFromString("sandbox-participant")
+
+  private val authService: AuthService = config.authService.getOrElse(AuthServiceWildcard)
+
+  @volatile private var sandboxState: SandboxState = start()
 
   def port: Int = sandboxState.apiServerState.port
 
@@ -162,12 +143,33 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
     new SandboxResetService(
       ledgerId,
       () => sandboxState.infra.executionContext,
-      () => sandboxState.resetAndRestartServer(),
+      () => resetAndRestartServer(),
       authorizer,
       loggerFactory
     )
 
-  sandboxState = start()
+  private def resetAndRestartServer(): Future[Unit] = {
+    implicit val ec: ExecutionContext = sandboxState.infra.executionContext
+
+    // Need to run this async otherwise the callback kills the server under the
+    // in-flight reset service request!
+    Future {
+      // fully tear down the old server
+      sandboxState.apiServerState.close()
+      // TODO: eliminate the state mutation somehow
+      // yes, it's horrible that we mutate the state here, but believe me, it's
+      // still an improvement to what we had before!
+      sandboxState = sandboxState.copy(
+        apiServerState = buildAndStartApiServer(
+          sandboxState.infra,
+          sandboxState.packageStore,
+          SqlStartMode.AlwaysReset))
+    }
+
+    // waits for the services to be closed, so we can guarantee that future API
+    // calls after finishing the reset will never be handled by the old one
+    sandboxState.apiServerState.apiServer.servicesClosed()
+  }
 
   private def buildAndStartApiServer(
       infra: Infrastructure,
