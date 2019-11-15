@@ -99,7 +99,7 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
   ) extends AutoCloseable {
     def port: Int = apiServer.port
 
-    override def close: Unit = {
+    override def close(): Unit = {
       apiServer.close() //fully tear down the old server.
       indexAndWriteService.close()
     }
@@ -112,7 +112,7 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
       extends AutoCloseable {
     def executionContext: ExecutionContext = materializer.executionContext
 
-    override def close: Unit = {
+    override def close(): Unit = {
       materializer.shutdown()
       Await.result(actorSystem.terminate(), asyncTolerance)
       metricsManager.close()
@@ -138,13 +138,13 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
       //need to run this async otherwise the callback kills the server under the in-flight reset service request!
 
       Future {
-        apiServerState.close // fully tear down the old server
+        apiServerState.close() // fully tear down the old server
         //TODO: eliminate the state mutation somehow
         //yes, it's horrible that we mutate the state here, but believe me, it's still an improvement to what we had before!
         sandboxState = copy(
           apiServerState =
             buildAndStartApiServer(infra, sandboxState.packageStore, SqlStartMode.AlwaysReset))
-      }(infra.executionContext)
+      }
 
       // waits for the services to be closed, so we can guarantee that future API calls after finishing the reset will never be handled by the old one
       apiServicesClosed
@@ -169,12 +169,11 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
 
   sandboxState = start()
 
-  @SuppressWarnings(Array("org.wartremover.warts.ExplicitImplicitTypes"))
   private def buildAndStartApiServer(
       infra: Infrastructure,
       packageStore: InMemoryPackageStore,
       startMode: SqlStartMode = SqlStartMode.ContinueIfExists): ApiServerState = {
-    implicit val mat = infra.materializer
+    implicit val mat: ActorMaterializer = infra.materializer
     implicit val ec: ExecutionContext = infra.executionContext
 
     val mm: MetricsManager = infra.metricsManager
@@ -300,7 +299,7 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
     val actorSystem = ActorSystem(actorSystemName)
     val infrastructure =
       Infrastructure(actorSystem, ActorMaterializer()(actorSystem), MetricsManager())
-    val packageStore = loadDamlPackages
+    val packageStore = loadDamlPackages()
     val apiState = buildAndStartApiServer(infrastructure, packageStore)
     SandboxState(apiState, infrastructure, packageStore)
   }
@@ -310,8 +309,7 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
     config.damlPackages
       .foldLeft[Either[(String, File), InMemoryPackageStore]](Right(InMemoryPackageStore.empty)) {
         case (storeE, f) =>
-          storeE.flatMap(_.withDarFile(Instant.EPOCH, None, f).left.map(_ -> f))
-
+          storeE.right.flatMap(_.withDarFile(Instant.EPOCH, None, f).left.map(_ -> f))
       }
       .fold({ case (err, file) => sys.error(s"Could not load package $file: $err") }, identity)
   }
