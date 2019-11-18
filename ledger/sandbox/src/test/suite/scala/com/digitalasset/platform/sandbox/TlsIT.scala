@@ -67,7 +67,7 @@ class TlsIT extends AsyncWordSpec with SandboxFixture with SuiteResourceManageme
           Some(privateKeyFilePath),
           Some(trustCertCollectionFilePath))))
 
-  private lazy val sandboxServer = SandboxServer(config)
+  private lazy val sandboxServer = new SandboxServer(config)
 
   private lazy val clientF = LedgerClient.singleHost(
     "localhost",
@@ -77,6 +77,11 @@ class TlsIT extends AsyncWordSpec with SandboxFixture with SuiteResourceManageme
 
   override protected lazy val suiteResource: Resource[Channel] =
     new SandboxServerResource(config)
+
+  override protected def beforeAll(): Unit = {
+    super.beforeAll()
+    sandboxServer.start()
+  }
 
   "A TLS-enabled server" should {
 

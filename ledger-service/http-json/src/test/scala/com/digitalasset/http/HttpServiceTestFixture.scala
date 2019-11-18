@@ -52,7 +52,8 @@ object HttpServiceTestFixture {
 
     val ledgerF: Future[(SandboxServer, Int)] = for {
       port <- toFuture(findOpenPort())
-      ledger <- Future(SandboxServer(ledgerConfig(port, dar, ledgerId)))
+      ledger = new SandboxServer(ledgerConfig(port, dar, ledgerId))
+      _ = ledger.start()
     } yield (ledger, port)
 
     val httpServiceF: Future[(ServerBinding, Int)] = for {
@@ -104,7 +105,8 @@ object HttpServiceTestFixture {
 
     val ledgerF: Future[(SandboxServer, Int)] = for {
       port <- toFuture(findOpenPort())
-      ledger <- Future(SandboxServer(ledgerConfig(port, dar, ledgerId)))
+      ledger = new SandboxServer(ledgerConfig(port, dar, ledgerId))
+      _ = ledger.start()
     } yield (ledger, port)
 
     val clientF: Future[LedgerClient] = for {

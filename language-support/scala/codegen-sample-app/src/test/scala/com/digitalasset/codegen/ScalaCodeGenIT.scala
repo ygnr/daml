@@ -111,7 +111,7 @@ class ScalaCodeGenIT
     ledgerIdMode = LedgerIdMode.Static(LedgerId(ledgerId)),
   )
 
-  private val sandbox: SandboxServer = SandboxServer(serverConfig)
+  private val sandbox: SandboxServer = new SandboxServer(serverConfig)
 
   private val applicationId = ledgerId + "-client"
   private val decoder: DecoderType = EventDecoder.createdEventToContractRef
@@ -125,6 +125,10 @@ class ScalaCodeGenIT
   private val emptyCommandId = CommandId("")
 
   private val emptyAgreementText = Some("") // this is by design, starting from release: 0.12.18 it is a requried field
+
+  override protected def beforeAll(): Unit = {
+    sandbox.start()
+  }
 
   override protected def afterAll(): Unit = {
     sandbox.close()

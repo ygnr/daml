@@ -29,7 +29,8 @@ class SandboxServerResource(sandboxConfig: SandboxConfig) extends Resource[Platf
   override def value: PlatformChannels = PlatformChannels(channel)
 
   override def setup(): Unit = {
-    sandboxServer = SandboxServer(sandboxConfig)
+    sandboxServer = new SandboxServer(sandboxConfig)
+    sandboxServer.start()
 
     eventLoopGroup = createEventLoopGroup("api-client")
 

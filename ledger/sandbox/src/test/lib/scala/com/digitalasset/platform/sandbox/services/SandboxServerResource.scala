@@ -25,7 +25,9 @@ class SandboxServerResource(config: => SandboxConfig) extends Resource[Channel] 
   override def value: Channel = channel
 
   override def setup(): Unit = {
-    sandboxServer = SandboxServer(config)
+    sandboxServer = new SandboxServer(config)
+    sandboxServer.start()
+
     eventLoopGroup = createEventLoopGroup("api-client")
 
     channel = {

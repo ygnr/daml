@@ -57,7 +57,8 @@ object ExampleMain extends App {
     ledgerIdMode = LedgerIdMode.Static(LedgerId(ledgerId)),
   )
 
-  private val server = SandboxServer(serverConfig)
+  private val server = new SandboxServer(serverConfig)
+  server.start()
   sys.addShutdownHook(server.close())
 
   private val asys = ActorSystem()

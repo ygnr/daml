@@ -19,7 +19,8 @@ object SandboxMain extends App {
   Cli.parse(args).fold(sys.exit(1)) { config =>
     setGlobalLogLevel(config.logLevel)
 
-    val server = SandboxServer(config)
+    val server = new SandboxServer(config)
+    server.start()
 
     val closed = new AtomicBoolean(false)
 
