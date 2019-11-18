@@ -11,12 +11,12 @@ import java.util.concurrent.TimeUnit
 import akka.stream.ActorMaterializer
 import com.digitalasset.grpc.adapter.{AkkaExecutionSequencerPool, ExecutionSequencerFactory}
 import com.digitalasset.platform.common.logging.NamedLoggerFactory
-import io.grpc.netty.NettyServerBuilder
 import io.grpc.ServerInterceptor
+import io.grpc.netty.NettyServerBuilder
 import io.netty.channel.nio.NioEventLoopGroup
+import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.handler.ssl.SslContext
 import io.netty.util.concurrent.DefaultThreadFactory
-import io.netty.channel.socket.nio.NioServerSocketChannel
 
 import scala.concurrent.{Future, Promise}
 import scala.util.control.NoStackTrace
@@ -152,13 +152,15 @@ private class LedgerApiServer(
   override def servicesClosed(): Future[Unit] = servicesClosedP.future
 
   override def close(): Unit = {
+    logger.debug("Tearing down the API services...")
     apiServices.close()
     servicesClosedP.success(())
+    logger.debug("Tearing down the gRPC server...")
     grpcServer.shutdown()
 
-    if (!grpcServer.awaitTermination(10L, TimeUnit.SECONDS)) {
+    if (!grpcServer.awaitTermination(10, TimeUnit.SECONDS)) {
       logger.warn(
-        "Server did not terminate gracefully in one second. " +
+        "Server did not terminate gracefully in 10 seconds. " +
           "Clients probably did not disconnect. " +
           "Proceeding with forced termination.")
       grpcServer.shutdownNow()
@@ -171,12 +173,16 @@ private class LedgerApiServer(
     // no quiet period, this can also be 0.
     // See <https://netty.io/4.1/api/io/netty/util/concurrent/EventExecutorGroup.html#shutdownGracefully-long-long-java.util.concurrent.TimeUnit->.
     // The 10 seconds to wait is sort of arbitrary, it's long enough to be noticeable though.
+    logger.debug("Tearing down the worker event loop group...")
     val workerEventLoopGroupShutdown =
       workerEventLoopGroup.shutdownGracefully(0L, 0L, TimeUnit.MILLISECONDS)
+    logger.debug("Tearing down the boss event loop group...")
     val bossEventLoopGroupShutdown =
       bossEventLoopGroup.shutdownGracefully(0L, 0L, TimeUnit.MILLISECONDS)
 
+    logger.debug("Waiting for the worker event loop group to shut down...")
     val workerShutdownComplete = workerEventLoopGroupShutdown.await(10L, TimeUnit.SECONDS)
+    logger.debug("Waiting for the boss event loop group to shut down...")
     val bossShutdownComplete = bossEventLoopGroupShutdown.await(10L, TimeUnit.SECONDS)
   }
 

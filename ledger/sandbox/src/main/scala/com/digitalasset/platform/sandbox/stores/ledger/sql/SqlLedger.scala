@@ -22,7 +22,7 @@ import com.digitalasset.daml_lf_dev.DamlLf.Archive
 import com.digitalasset.ledger.api.domain.{LedgerId, PartyDetails, RejectionReason}
 import com.digitalasset.platform.common.logging.NamedLoggerFactory
 import com.digitalasset.platform.common.util.{DirectExecutionContext => DEC}
-import com.digitalasset.platform.sandbox.LedgerIdGenerator
+import com.digitalasset.platform.sandbox.{Async, LedgerIdGenerator}
 import com.digitalasset.platform.sandbox.metrics.MetricsManager
 import com.digitalasset.platform.sandbox.services.transaction.SandboxEventIdFormatter
 import com.digitalasset.platform.sandbox.stores.ledger.ScenarioLoader.LedgerEntryOrBump
@@ -45,7 +45,7 @@ import scalaz.syntax.tag._
 
 import scala.collection.immutable
 import scala.collection.immutable.Queue
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 sealed abstract class SqlStartMode extends Product with Serializable
@@ -213,9 +213,17 @@ private class SqlLedger(
   }
 
   override def close(): Unit = {
+    implicit val ec: ExecutionContext = DEC
     super.close()
     persistenceQueue.complete()
     checkpointQueue.complete()
+    val _ = Await.result(
+      Future.sequence(
+        Seq(
+          persistenceQueue.watchCompletion(),
+          checkpointQueue.watchCompletion(),
+        )),
+      Async.tolerance)
   }
 
   override def publishHeartbeat(time: Instant): Future[Unit] =

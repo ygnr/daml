@@ -34,7 +34,6 @@ import com.digitalasset.platform.server.services.testing.TimeServiceBackend
 import com.digitalasset.platform.services.time.TimeProviderType
 import org.slf4j.LoggerFactory
 
-import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.Try
 
@@ -55,7 +54,6 @@ class RunningSandboxServer(
 }
 
 object RunningSandboxServer {
-  private val asyncTolerance = 30.seconds
   private val logger = LoggerFactory.getLogger(this.getClass)
 
   // Name of this participant
@@ -156,7 +154,7 @@ object RunningSandboxServer {
           ))
     }
 
-    val indexAndWriteService = Try(Await.result(indexAndWriteServiceF, asyncTolerance))
+    val indexAndWriteService = Try(Await.result(indexAndWriteServiceF, Async.tolerance))
       .fold(t => {
         val msg = "Could not create SandboxIndexAndWriteService"
         logger.error(msg, t)
@@ -195,7 +193,7 @@ object RunningSandboxServer {
           resetService,
         ),
       ),
-      asyncTolerance,
+      Async.tolerance,
     )
 
     val newState = ApiServerState(

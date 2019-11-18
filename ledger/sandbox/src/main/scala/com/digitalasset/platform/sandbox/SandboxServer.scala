@@ -13,9 +13,9 @@ import com.digitalasset.ledger.server.apiserver.ApiServer
 import com.digitalasset.platform.sandbox.SandboxServer._
 import com.digitalasset.platform.sandbox.config.SandboxConfig
 import com.digitalasset.platform.sandbox.metrics.MetricsManager
-import com.digitalasset.platform.sandbox.stores.InMemoryPackageStore
+import com.digitalasset.platform.sandbox.stores.{InMemoryPackageStore, IndexAndWriteService}
+import org.slf4j.LoggerFactory
 
-import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContext, Future}
 
 class SandboxServer(config: SandboxConfig, actorSystemName: String = defaultActorSystemName)
@@ -45,20 +45,22 @@ class SandboxServer(config: SandboxConfig, actorSystemName: String = defaultActo
     // Need to run this async otherwise the callback kills the server under the
     // in-flight reset service request!
     Future {
-      // fully tear down the old server
+      logger.debug("Tearing down the old server...")
       runningServer.get.close()
 
+      logger.debug("Constructing a new server...")
+      val newRunningServer = RunningSandboxServer.recreate(
+        config,
+        infrastructure,
+        packageStore,
+        runningServer.get.port,
+        () => resetAndRestartServer(),
+      )
       // TODO: eliminate the state mutation somehow
       // yes, it's horrible that we mutate the state here, but believe me, it's
       // still an improvement to what we had before!
-      runningServer = Some(
-        RunningSandboxServer.recreate(
-          config,
-          infrastructure,
-          packageStore,
-          runningServer.get.port,
-          () => resetAndRestartServer(),
-        ))
+      runningServer = Some(newRunningServer)
+      logger.debug("The server was reset and restarted.")
     }
 
     // waits for the services to be closed, so we can guarantee that future API
@@ -78,19 +80,21 @@ class SandboxServer(config: SandboxConfig, actorSystemName: String = defaultActo
 }
 
 object SandboxServer {
-  private val asyncTolerance = 30.seconds
+  private val logger = LoggerFactory.getLogger(classOf[SandboxServer])
 
   private val defaultActorSystemName = "sandbox"
 
   case class ApiServerState(
       ledgerId: LedgerId,
       apiServer: ApiServer,
-      indexAndWriteService: AutoCloseable,
+      indexAndWriteService: IndexAndWriteService,
   ) extends AutoCloseable {
     def port: Int = apiServer.port
 
     override def close(): Unit = {
-      apiServer.close() //fully tear down the old server.
+      logger.debug("Tearing down the API server...")
+      apiServer.close()
+      logger.debug("Tearing down the index and write service...")
       indexAndWriteService.close()
     }
   }
@@ -104,7 +108,7 @@ object SandboxServer {
 
     override def close(): Unit = {
       materializer.shutdown()
-      Await.result(actorSystem.terminate(), asyncTolerance)
+      Await.result(actorSystem.terminate(), Async.tolerance)
       metricsManager.close()
     }
   }

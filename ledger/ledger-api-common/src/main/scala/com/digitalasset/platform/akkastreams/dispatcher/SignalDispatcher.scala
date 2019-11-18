@@ -10,7 +10,9 @@ import akka.stream._
 import akka.stream.scaladsl.{Source, SourceQueueWithComplete}
 import com.digitalasset.platform.akkastreams.dispatcher.SignalDispatcher.Signal
 import com.digitalasset.platform.common.util.DirectExecutionContext
-import org.slf4j.LoggerFactory
+
+import scala.concurrent.Await
+import scala.concurrent.duration.DurationInt
 
 /**
   * A fanout signaller that can be subscribed to dynamically.
@@ -19,9 +21,6 @@ import org.slf4j.LoggerFactory
   */
 @SuppressWarnings(Array("org.wartremover.warts.Any"))
 class SignalDispatcher private () extends AutoCloseable {
-
-  val logger = LoggerFactory.getLogger(getClass)
-
   private val runningState: AtomicReference[Option[Set[SourceQueueWithComplete[Signal]]]] =
     new AtomicReference(Some(Set.empty))
 
@@ -61,7 +60,8 @@ class SignalDispatcher private () extends AutoCloseable {
         NotUsed
       }
 
-  private def throwClosed(): Nothing = throw new IllegalStateException("SignalDispatcher is closed")
+  private def throwClosed(): Nothing =
+    throw new IllegalStateException("SignalDispatcher is closed")
 
   /**
     * Closes this SignalDispatcher.
@@ -73,8 +73,10 @@ class SignalDispatcher private () extends AutoCloseable {
       // note, Materializer's lifecycle is managed outside of this class
       // fire and forget complete signals -- we can't control how long downstream takes
       .fold(throw new IllegalStateException("SignalDispatcher is already closed"))(
-        _.foreach(_.complete()))
-
+        _.foreach(source => {
+          source.complete()
+          Await.result(source.watchCompletion(), 10.seconds)
+        }))
 }
 
 object SignalDispatcher {
