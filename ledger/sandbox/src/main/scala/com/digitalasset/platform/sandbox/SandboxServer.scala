@@ -136,7 +136,7 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
   def port: Int = sandboxState.apiServerState.port
 
   /** the reset service is special, since it triggers a server shutdown */
-  private def resetService(
+  private def newResetService(
       ledgerId: LedgerId,
       authorizer: Authorizer,
       loggerFactory: NamedLoggerFactory): SandboxResetService =
@@ -238,7 +238,9 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
       }, identity)
 
     val authorizer = new Authorizer(() => java.time.Clock.systemUTC.instant())
-
+    val resetService = newResetService(ledgerId, authorizer, loggerFactory)
+    // Re-use the same port after reset.
+    val port = Option(sandboxState).fold(config.port)(_.apiServerState.port)
     val apiServer = Await.result(
       LedgerApiServer.create(
         (am: ActorMaterializer, esf: ExecutionSequencerFactory) =>
@@ -251,27 +253,22 @@ class SandboxServer(actorSystemName: String, config: => SandboxConfig) extends A
               timeProvider,
               config.timeModel,
               config.commandConfig,
-              timeServiceBackendO
-                .map(
-                  TimeServiceBackend.withObserver(
-                    _,
-                    indexAndWriteService.publishHeartbeat
-                  )),
-              loggerFactory
+              timeServiceBackendO.map(
+                TimeServiceBackend.withObserver(_, indexAndWriteService.publishHeartbeat)),
+              loggerFactory,
             )(am, esf)
-            .map(_.withServices(List(resetService(ledgerId, authorizer, loggerFactory)))),
-        // NOTE(JM): Re-use the same port after reset.
-        Option(sandboxState).fold(config.port)(_.apiServerState.port),
+            .map(_.withServices(List(resetService))),
+        port,
         config.maxInboundMessageSize,
         config.address,
         loggerFactory,
         config.tlsConfig.flatMap(_.server),
         List(
           AuthorizationInterceptor(authService, ec),
-          resetService(ledgerId, authorizer, loggerFactory)
+          resetService,
         ),
       ),
-      asyncTolerance
+      asyncTolerance,
     )
 
     val newState = ApiServerState(
