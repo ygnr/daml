@@ -24,8 +24,8 @@ import scala.concurrent.Future
 private class MeteredLedgerReadDao(ledgerDao: LedgerReadDao, mm: MetricsManager)
     extends LedgerReadDao
     with AutoCloseable {
-  override def lookupLedgerId(): Future[Option[LedgerId]] =
-    mm.timedFuture("LedgerDao:lookupLedgerId", ledgerDao.lookupLedgerId())
+  override def lookupLedgerId(callerId: String): Future[Option[LedgerId]] =
+    mm.timedFuture("LedgerDao:lookupLedgerId", ledgerDao.lookupLedgerId(callerId))
 
   override def lookupLedgerEnd(): Future[Long] =
     mm.timedFuture("LedgerDao:lookupLedgerEnd", ledgerDao.lookupLedgerEnd())
