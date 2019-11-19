@@ -20,6 +20,7 @@ import {
   DamlLfValue,
   DamlLfValueBool,
   DamlLfValueEnum,
+  DamlLfValueGenMap,
   DamlLfValueInt64,
   DamlLfValueList,
   DamlLfValueMap,
@@ -31,6 +32,7 @@ import {
   DamlLfValueUnit,
   DamlLfValueVariant,
   enumCon,
+  genMapEntry,
   mapEntry,
 } from '../api/DamlLfValue';
 import Button from '../Button';
@@ -722,7 +724,91 @@ const MapInput = (props: MapInputProps): JSX.Element => {
   } else {
     return (<TypeErrorElement parameter={parameter} argument={argument} />);
   }
+};
+
+
+interface GenMapInputProps extends InputProps<DamlLfValueGenMap> {
+  parameter: DamlLfTypePrim;
+  name: string;
+  level: number
+  contractIdProvider?: ContractIdProvider
+  typeProvider: TypeProvider
 }
+
+const GenMapInput = (props: GenMapInputProps): JSX.Element => {
+  const { argument, parameter, level, onChange, disabled, contractIdProvider, typeProvider } = props;
+  if (matchPrimitiveType(argument, parameter, 'genmap')) {
+    const entries = argument && argument.type === 'genmap' ? argument.value : [];
+    const keyType = parameter.args[0] || DamlLfTypeF.unit();
+    const valueType = parameter.args[1] || DamlLfTypeF.unit();
+    return (
+      <NestedForm level={level}>
+        {entries.map((entry, i) => (
+          <LabeledElement label={`entries[${i}]`} key={`entries[${i}]`}>
+            <NestedForm level={level + 1}>
+              <LabeledElement label={`key`} key={`entries[${i}].key`}>
+                <ParameterInput
+                  contractIdProvider={contractIdProvider}
+                  typeProvider={typeProvider}
+                  parameter={keyType}
+                  name={`entries[${i}].key`}
+                  argument={entry.key}
+                  disabled={disabled}
+                  onChange={(key) => {
+                    const newElements = entries.slice(0);
+                    newElements[i] = genMapEntry(key, entries[i].value);
+                    onChange(DamlLfValueF.genmap(newElements));
+                  }}
+                  level={level + 2}
+                />
+              </LabeledElement>
+              <LabeledElement label={`value`} key={`entries[${i}].value`}>
+                <ParameterInput
+                  contractIdProvider={contractIdProvider}
+                  typeProvider={typeProvider}
+                  parameter={valueType}
+                  name={`entries[${i}].value`}
+                  argument={entry.value}
+                  disabled={disabled}
+                  onChange={(val) => {
+                    const newElements = entries.slice(0);
+                    newElements[i] = genMapEntry(entries[i].key, val);
+                    onChange(DamlLfValueF.genmap(newElements));
+                  }}
+                  level={level + 2}
+                />
+              </LabeledElement>
+            </NestedForm>
+          </LabeledElement>
+        ))}
+        <ListControls>
+          <ListControlButton
+            type="main"
+            onClick={(_) => {
+              const newElements = entries.slice(0);
+              newElements.push(
+                DamlLfValueF.genMapEntry(DamlLfValueF.initialValue(keyType), DamlLfValueF.initialValue(valueType)));
+              onChange(DamlLfValueF.genmap(newElements));
+            }}
+          >
+            Add new entry
+          </ListControlButton>
+          <ListControlButton
+            type="main"
+            onClick={(_) => {
+              onChange(DamlLfValueF.genmap(entries.slice(0, - 1)))
+            }}
+            disabled={entries.length === 0}
+          >
+            Delete last entry
+          </ListControlButton>
+        </ListControls>
+      </NestedForm>
+    );
+  } else {
+    return (<TypeErrorElement parameter={parameter} argument={argument} />);
+  }
+};
 
 //-------------------------------------------------------------------------------------------------
 // DamlLfTypeCon - user defined data type
@@ -1003,6 +1089,19 @@ export const ParameterInput = (props: ParameterInputProps): JSX.Element => {
           onChange={onChange}
           argument={argument}
         />
+        );
+      }
+      case 'genmap': {
+        return (
+          <GenMapInput
+            parameter={parameter}
+            name={name}
+            level={level}
+            typeProvider={typeProvider}
+            disabled={disabled}
+            onChange={onChange}
+            argument={argument}
+          />
         );
       }
       default: throw new NonExhaustiveMatch(parameter.name)

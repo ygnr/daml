@@ -24,6 +24,7 @@ export type DamlLfPrimType
   | 'optional'
   | 'list'
   | 'map'
+  | 'genmap'
 
 export type DamlLfTypePrim    = { type: 'primitive', name: DamlLfPrimType, args: DamlLfType[] }
 export type DamlLfTypeVar     = { type: 'typevar', name: string }

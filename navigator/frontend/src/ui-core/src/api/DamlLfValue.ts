@@ -2,7 +2,7 @@
 // All rights reserved.
 
 import * as Moment from 'moment';
-import { NonExhaustiveMatch } from '../util'
+import {NonExhaustiveMatch} from '../util'
 import {DamlLfEnum, DamlLfIdentifier, DamlLfRecord, DamlLfType, DamlLfVariant} from './DamlLfType';
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -31,6 +31,9 @@ export type DamlLfValueEnum       = { type: 'enum', id: DamlLfIdentifier, constr
 export type DamlLfValueUndefined  = { type: 'undefined' }
 export type DamlLfValueMap        = { type: 'map', value: DamlLfValueMapEntry[] }
 export type DamlLfValueMapEntry   = { key: string, value: DamlLfValue }
+export type DamlLfValueGenMap     = { type: 'genmap', value: DamlLfValueGenMapEntry[] }
+export type DamlLfValueGenMapEntry = { key: DamlLfValue, value: DamlLfValue }
+
 
 export type DamlLfValue
   = DamlLfValueText
@@ -45,6 +48,7 @@ export type DamlLfValue
   | DamlLfValueOptional
   | DamlLfValueList
   | DamlLfValueMap
+  | DamlLfValueGenMap
   | DamlLfValueRecord
   | DamlLfValueVariant
   | DamlLfValueEnum
@@ -70,6 +74,8 @@ export function optional(value: DamlLfValue | null): DamlLfValueOptional { retu
 export function list(value: DamlLfValue[]): DamlLfValueList { return { type: 'list', value }}
 export function map(value: DamlLfValueMapEntry[]): DamlLfValueMap { return { type: 'map', value }}
 export function mapEntry(key: string, value: DamlLfValue): DamlLfValueMapEntry { return { key, value } }
+export function genmap(value: DamlLfValueGenMapEntry[]): DamlLfValueGenMap { return { type: 'genmap', value }}
+export function genMapEntry(key: DamlLfValue, value: DamlLfValue): DamlLfValueGenMapEntry { return { key, value } }
 export function record(id: DamlLfIdentifier, fields: DamlLfRecordField[]): DamlLfValueRecord {
   return { type: 'record', id, fields }
 }
@@ -168,6 +174,29 @@ export function evalPath(value: DamlLfValue, path: string[], index: number = 0):
           }
         }
       }
+    case 'genmap':
+      if (isLast) {
+        return value
+      } else if (index === path.length - 2) {
+        return notFound
+      } else {
+        const listIndex = parseInt(path[index]);
+        if (isNaN(listIndex)) {
+          return notFound;
+        } else if (listIndex < 0 || listIndex >= value.value.length) {
+          return notFound;
+        } else {
+          const entry = value.value[listIndex];
+          switch (path[index + 1]) {
+            case 'key' :
+              return evalPath(entry.key, path, index + 2);
+            case 'value' :
+              return evalPath(entry.value, path, index + 2);
+            default:
+              return notFound;
+          }
+        }
+      }
     case 'undefined': return notFound;
     default: throw new NonExhaustiveMatch(value);
   }
@@ -195,6 +224,7 @@ export function initialValue(type: DamlLfType): DamlLfValue {
       case 'optional':    return optional(null);
       case 'list':        return list([]);
       case 'map':         return map([]);
+      case 'genmap':      return genmap([]);
       default: throw new NonExhaustiveMatch(type.name);
     }
     default: throw new NonExhaustiveMatch(type);
@@ -227,6 +257,8 @@ export function toJSON(value: DamlLfValue): JSON {
       return value.constructor;
     case 'map':
       return value.value.map((e) => ({key: e.key, value: toJSON(e.value)}));
+    case 'genmap':
+      return value.value.map((e) => ({key: toJSON(e.key), value: toJSON(e.value)}));
     case 'undefined': return '???';
     default: throw new NonExhaustiveMatch(value);
   }

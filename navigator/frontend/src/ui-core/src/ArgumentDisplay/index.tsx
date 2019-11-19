@@ -120,6 +120,28 @@ const ArgumentDisplay = (props: Props): JSX.Element => {
         )) : <span>(empty map)</span>}
       </NestedForm>
     );
+    case 'genmap' : return (
+      <NestedForm level={level}>
+        {argument.value.length > 0 ? argument.value.map((entry, i) => (
+          <LabeledElement label={`entries[${i}]`} key={`entries[${i}]`} className={className}>
+            <NestedForm level={level + 1}>
+              <LabeledElement label={`key`} key={`entries[${i}].key`} className={className}>
+                <ArgumentDisplay
+                  argument={entry.key}
+                  level={level + 2}
+                />
+              </LabeledElement>
+              <LabeledElement label={`value`} key={`entries[${i}].value`} className={className}>
+                <ArgumentDisplay
+                  argument={entry.value}
+                  level={level + 2}
+                />
+              </LabeledElement>
+            </NestedForm>
+          </LabeledElement>
+        )) : <span>(empty map)</span>}
+      </NestedForm>
+    );
     case 'undefined': return <span>???</span>;
   }
   throw new NonExhaustiveMatch(argument);

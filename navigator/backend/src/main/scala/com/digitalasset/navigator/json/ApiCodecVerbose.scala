@@ -46,6 +46,7 @@ object ApiCodecVerbose {
   private[this] final val tagOptional: String = "optional"
   private[this] final val tagList: String = "list"
   private[this] final val tagMap: String = "map"
+  private[this] final val tagGenMap: String = "genmap"
   private[this] final val tagRecord: String = "record"
   private[this] final val tagVariant: String = "variant"
   private[this] final val tagEnum: String = "enum"
@@ -77,9 +78,7 @@ object ApiCodecVerbose {
     case V.ValueOptional(Some(v)) =>
       JsObject(propType -> JsString(tagOptional), propValue -> apiValueToJsValue(v))
     case v: Model.ApiMap => apiMapToJsValue(v)
-    case _: Model.ApiGenMap =>
-      // FIXME https://github.com/digital-asset/daml/issues/2256
-      serializationError(s"Gen Map are not supported")
+    case v: Model.ApiGenMap => apiGenMapToJsValue(v)
     case _: Model.ApiImpossible => serializationError("impossible! tuples are not serializable")
   }
 
@@ -89,15 +88,21 @@ object ApiCodecVerbose {
       propValue -> JsArray(value.values.map(apiValueToJsValue).toImmArray.toSeq: _*)
     )
 
-  private[this] val fieldKey = "key"
-  private[this] val fieldValue = "value"
-
   def apiMapToJsValue(value: Model.ApiMap): JsValue =
     JsObject(
       propType -> JsString(tagMap),
       propValue -> JsArray(value.value.toImmArray.toSeq.toVector.map {
         case (k, v) =>
-          JsObject(fieldKey -> JsString(k), fieldValue -> apiValueToJsValue(v))
+          JsObject("key" -> JsString(k), "value" -> apiValueToJsValue(v))
+      })
+    )
+
+  def apiGenMapToJsValue(value: Model.ApiGenMap): JsValue =
+    JsObject(
+      propType -> JsString(tagGenMap),
+      propValue -> JsArray(value.value.toSeq.toVector.map {
+        case (k, v) =>
+          JsObject("key" -> apiValueToJsValue(k), "value" -> apiValueToJsValue(v))
       })
     )
 
@@ -171,6 +176,8 @@ object ApiCodecVerbose {
               err => deserializationError(s"Can't read ${value.prettyPrint} as ApiValue, $err'"),
               identity
             ))
+      case `tagGenMap` =>
+        V.ValueGenMap(ImmArray(arrayField(value, propValue, "ApiGenMap").map(jsValueToGenMapEntry)))
       case t =>
         deserializationError(s"Can't read ${value.prettyPrint} as ApiValue, unknown type '$t'")
     }
@@ -193,8 +200,21 @@ object ApiCodecVerbose {
     val translation = value match {
       case JsObject(map) =>
         for {
-          key <- map.get(fieldKey).collect { case JsString(s) => s }
-          value <- map.get(fieldValue).map(jsValueToApiValue)
+          key <- map.get("key").collect { case JsString(s) => s }
+          value <- map.get("value").map(jsValueToApiValue)
+        } yield key -> value
+      case _ => None
+    }
+
+    translation.getOrElse(deserializationError(s"Can't read ${value.prettyPrint} as a map entry"))
+  }
+
+  def jsValueToGenMapEntry(value: JsValue): (Model.ApiValue, Model.ApiValue) = {
+    val translation = value match {
+      case JsObject(genMap) =>
+        for {
+          key <- genMap.get("key").map(jsValueToApiValue)
+          value <- genMap.get("valye").map(jsValueToApiValue)
         } yield key -> value
       case _ => None
     }
