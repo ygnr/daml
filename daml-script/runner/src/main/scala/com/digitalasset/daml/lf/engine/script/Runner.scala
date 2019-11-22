@@ -10,7 +10,11 @@ import io.grpc.StatusRuntimeException
 import java.util.UUID
 import scala.concurrent.{ExecutionContext, Future}
 import scalaz.{\/-}
+import scalaz.std._
+import scalaz.syntax.applicative._
 import scalaz.std.either._
+import scalaz.std.map._
+import scalaz.std.option._
 import scalaz.syntax.tag._
 import scalaz.syntax.traverse._
 import spray.json._
@@ -31,6 +35,7 @@ import com.digitalasset.daml.lf.speedy.SValue._
 import com.digitalasset.daml.lf.value.Value
 import com.digitalasset.daml.lf.value.Value.AbsoluteContractId
 import com.digitalasset.daml.lf.value.json.ApiCodecCompressed
+import com.digitalasset.grpc.adapter.ExecutionSequencerFactory
 import com.digitalasset.ledger.api.domain.LedgerId
 import com.digitalasset.ledger.api.refinements.ApiTypes.ApplicationId
 import com.digitalasset.ledger.api.v1.command_service.SubmitAndWaitRequest
@@ -41,6 +46,9 @@ import com.digitalasset.ledger.api.v1.transaction_filter.{
   InclusiveFilters
 }
 import com.digitalasset.ledger.client.LedgerClient
+import com.digitalasset.ledger.client.LedgerClient
+import com.digitalasset.ledger.client.configuration.LedgerClientConfiguration
+
 import com.digitalasset.ledger.client.services.commands.CommandUpdater
 
 object LfValueCodec extends ApiCodecCompressed[AbsoluteContractId](false, false) {
@@ -50,6 +58,47 @@ object LfValueCodec extends ApiCodecCompressed[AbsoluteContractId](false, false)
     case JsString(s) =>
       ContractIdString.fromString(s).fold(deserializationError(_), AbsoluteContractId)
     case _ => deserializationError("ContractId must be a string")
+  }
+}
+
+case class Participant(participant: String)
+case class Party(party: String)
+case class ApiParameters(host: String, port: Int)
+case class Participants[T](
+  default_participant: Option[T],
+  participants: Map[Participant, T],
+  party_participants: Map[Party, Participant],
+)
+
+object ParticipantsJsonProtocol extends DefaultJsonProtocol {
+  implicit object ParticipantFormat extends JsonFormat[Participant] {
+    def read(value: JsValue) = value match {
+      case JsString(s) => Participant(s)
+      case _ => deserializationError("Expected Participant string")
+    }
+    def write(p : Participant) = JsString(p.participant)
+  }
+  implicit object PartyFormat extends JsonFormat[Party] {
+    def read(value: JsValue) = value match {
+      case JsString(s) => Party(s)
+      case _ => deserializationError("Expected Party string")
+    }
+    def write(p: Party) = JsString(p.party)
+  }
+  implicit val apiParametersFormat = jsonFormat2(ApiParameters)
+  implicit val participantsFormat = jsonFormat3(Participants[ApiParameters])
+}
+
+object Runner {
+  private def connectApiParameters(params: ApiParameters, clientConfig: LedgerClientConfiguration)(implicit ec: ExecutionContext, seq: ExecutionSequencerFactory) : Future[LedgerClient] = {
+    LedgerClient.singleHost(params.host, params.port, clientConfig)
+  }
+  // We might want to have one config per participant at some point but for now this should be sufficient.
+  def connect(participantParams: Participants[ApiParameters], clientConfig: LedgerClientConfiguration)(implicit ec: ExecutionContext, seq: ExecutionSequencerFactory) : Future[Participants[LedgerClient]] = {
+    for {
+      defaultClient <- participantParams.default_participant.traverseU(connectApiParameters(_, clientConfig))
+      participantClients <- participantParams.participants.traverseU(connectApiParameters(_, clientConfig))
+    } yield Participants(defaultClient, participantClients, participantParams.party_participants)
   }
 }
 
