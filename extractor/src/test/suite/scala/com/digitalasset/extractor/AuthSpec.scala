@@ -4,8 +4,8 @@
 package com.digitalasset.extractor
 
 import java.nio.file.Files
+import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.time.{Duration, Instant}
 import java.util.concurrent.atomic.AtomicReference
 
 import com.digitalasset.daml.lf.data.Ref.Party
@@ -14,17 +14,14 @@ import com.digitalasset.extractor.ledger.types.TransactionTree
 import com.digitalasset.extractor.targets.TextPrintTarget
 import com.digitalasset.extractor.writers.Writer
 import com.digitalasset.grpc.{GrpcException, GrpcStatus}
-import com.digitalasset.jwt.domain.DecodedJwt
-import com.digitalasset.jwt.{HMAC256Verifier, JwtSigner}
-import com.digitalasset.ledger.api.auth.{AuthServiceJWT, AuthServiceJWTCodec, AuthServiceJWTPayload}
+import com.digitalasset.ledger.api.auth.AuthServiceJWTPayload
 import com.digitalasset.ledger.api.testing.utils.SuiteResourceManagementAroundAll
 import com.digitalasset.ledger.api.tls.TlsConfiguration
 import com.digitalasset.ledger.api.v1.command_service.{CommandServiceGrpc, SubmitAndWaitRequest}
 import com.digitalasset.ledger.api.v1.ledger_offset.LedgerOffset
 import com.digitalasset.ledger.client.services.commands.SynchronousCommandClient
 import com.digitalasset.ledger.service.LedgerReader.PackageStore
-import com.digitalasset.platform.sandbox.config.SandboxConfig
-import com.digitalasset.platform.sandbox.services.{SandboxFixture, TestCommands}
+import com.digitalasset.platform.sandbox.services.{SandboxFixtureWithAuth, TestCommands}
 import com.digitalasset.timer.Delayed
 import com.google.protobuf.timestamp.Timestamp
 import io.grpc.Status.Code.PERMISSION_DENIED
@@ -35,18 +32,15 @@ import scalaz.{OneAnd, \/}
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
-import scala.util.{Failure, Success}
 import scala.util.control.NonFatal
+import scala.util.{Failure, Success}
 
 final class AuthSpec
     extends AsyncFlatSpec
-    with SandboxFixture
+    with SandboxFixtureWithAuth
     with SuiteResourceManagementAroundAll
     with Matchers
     with TestCommands {
-
-  private val jwtHeader = """{"alg": "HS256", "typ": "JWT"}"""
-  private val jwtSecret = "com.digitalasset.extractor.AuthSpec"
 
   private def newSyncClient = new SynchronousCommandClient(CommandServiceGrpc.stub(channel))
 
@@ -56,33 +50,11 @@ final class AuthSpec
     val letInstant = Instant.EPOCH.plus(10, ChronoUnit.DAYS)
     val let = Timestamp(letInstant.getEpochSecond, letInstant.getNano)
     val mrt = Timestamp(let.seconds + 30L, let.nanos)
-    dummyCommands(ledgerId, "commandId1").update(
+    dummyCommands(wrappedLedgerId, "commandId1").update(
       _.commands.ledgerEffectiveTime := let,
       _.commands.maximumRecordTime := mrt
     )
   }
-
-  implicit class AuthServiceJWTPayloadExtensions(payload: AuthServiceJWTPayload) {
-    def expiresIn(t: java.time.Duration): AuthServiceJWTPayload =
-      payload.copy(exp = Some(Instant.now.plus(t)))
-    def expiresInFiveSeconds: AuthServiceJWTPayload = expiresIn(Duration.ofSeconds(5))
-    def expiresTomorrow: AuthServiceJWTPayload = expiresIn(Duration.ofDays(1))
-    def expired: AuthServiceJWTPayload = expiresIn(Duration.ofDays(-1))
-
-    def signed(secret: String): String =
-      JwtSigner.HMAC256
-        .sign(DecodedJwt(jwtHeader, AuthServiceJWTCodec.compactPrint(payload)), secret)
-        .getOrElse(sys.error("Failed to generate token"))
-        .value
-
-    def asHeader(secret: String = jwtSecret) = s"Bearer ${signed(secret)}"
-  }
-
-  override protected def config: SandboxConfig =
-    super.config.copy(
-      authService = Some(
-        AuthServiceJWT(
-          HMAC256Verifier(jwtSecret).getOrElse(sys.error("Failed to create HMAC256 verifier")))))
 
   private val operator = "OPERATOR"
   private val operatorPayload = AuthServiceJWTPayload(
