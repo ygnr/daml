@@ -33,8 +33,8 @@ object Assertions extends DiffExtensions {
         s"$context: two objects are supposed to be equal but they are not")
   }
 
-  def assertGrpcError(t: Throwable, expectedCode: Status.Code, pattern: String): Unit =
-    t match {
+  def assertGrpcError(exception: Throwable, expectedCode: Status.Code, pattern: String): Unit =
+    exception match {
       case GrpcException(GrpcStatus(`expectedCode`, Some(msg)), _) if msg.contains(pattern) =>
         ()
       case GrpcException(GrpcStatus(`expectedCode`, None), _) if pattern.isEmpty =>
@@ -45,5 +45,7 @@ object Assertions extends DiffExtensions {
         fail(s"Expected code [$expectedCode], but got [$code].")
       case NonFatal(e) =>
         fail("Exception is neither a StatusRuntimeException nor a StatusException", e)
+      case e =>
+        throw e
     }
 }
