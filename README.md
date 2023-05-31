@@ -118,3 +118,5 @@ in your home directory.
 To build Haskell executables with profiling enabled, pass `-c dbg` to
 Bazel, e.g. `bazel build -c dbg damlc`. If you want to build the whole
 SDK with profiling enabled use `daml-sdk-head --profiling`.
+
+Test
